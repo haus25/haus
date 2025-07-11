@@ -1,0 +1,33 @@
+{
+  "name": "Haus | Reality, in the making.",
+  "short_name": "Haus",
+  "description": "Haus introduces dynamic, Real-Time Assets to the NFT space. Enter the Artist's workshop, and own artworks which acquire value with time.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#FF3B30",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "author": "jabyl",
+  "hidden_message": "cmVhbGl0eSAtIGlzIHlldCB0byBiZSBpbnZlbnRlZC4="
+}
