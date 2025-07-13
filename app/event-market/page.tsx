@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Navbar } from "../components/navbar"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
@@ -14,6 +15,10 @@ import { RecentlyViewed } from "../components/recentlyViewed"
 import { TooltipHelper } from "../components/tooltipHelper"
 import { QuickAccess } from "../components/quickAccess"
 import { useEvents } from "../contexts/events"
+import { useAuth } from "../contexts/auth"
+import { useWalletClient } from 'wagmi'
+import { toast } from "sonner"
+import { createTicketPurchaseService } from "../services/buyTicket"
 
 type Category =
   | "standup-comedy"
@@ -26,6 +31,7 @@ type Category =
 type SortOption = "date-earliest" | "date-latest" | "price-low-high" | "price-high-low"
 
 export default function EventMarket() {
+  const router = useRouter()
   const [searchQuery, setSearchQuery] = useState("")
   const [expandedCardId, setExpandedCardId] = useState<number | null>(null)
   const [isCurationModalOpen, setIsCurationModalOpen] = useState(false)
@@ -35,12 +41,99 @@ export default function EventMarket() {
   const [sortOption, setSortOption] = useState<SortOption>("date-earliest")
 
   const { events } = useEvents()
+  const { userProfile, isConnected } = useAuth()
+  const { data: walletClient } = useWalletClient()
 
-  const toggleCardExpansion = (id: number) => {
-    if (expandedCardId === id) {
+  const handleBuyTicket = async (event: any) => {
+    if (!isConnected || !userProfile) {
+      toast.error("Please connect your wallet to purchase tickets")
+      return
+    }
+
+    if (!walletClient) {
+      toast.error("Wallet not available")
+      return
+    }
+
+    try {
+      console.log("TICKET_PURCHASE: Starting ticket purchase flow")
+      console.log("TICKET_PURCHASE: Event ID:", event.contractEventId || event.id)
+      console.log("TICKET_PURCHASE: User address:", userProfile.address)
+
+      toast.loading("Initializing ticket purchase...")
+
+      // Create ticket purchase service
+      const ticketService = createTicketPurchaseService(walletClient)
+
+      // Use contractEventId if available, otherwise fall back to id
+      const eventId = event.contractEventId || parseInt(event.id)
+      
+      console.log("TICKET_PURCHASE: Using event ID:", eventId)
+
+      // Check if user already has a ticket
+      toast.loading("Checking ticket availability...")
+      const alreadyHasTicket = await ticketService.userHasTicket(eventId, userProfile.address)
+      
+      if (alreadyHasTicket) {
+        toast.error("You already have a ticket for this event!")
+        return
+      }
+
+      // Get sales info to show user the current status
+      const salesInfo = await ticketService.getTicketSalesInfo(eventId)
+      
+      if (salesInfo.remainingTickets <= 0) {
+        toast.error("Sorry, this event is sold out!")
+        return
+      }
+
+      console.log("TICKET_PURCHASE: Ticket price:", salesInfo.price, "SEI")
+      console.log("TICKET_PURCHASE: Tickets remaining:", salesInfo.remainingTickets)
+
+      // Show loading message with price info
+      toast.loading(`Purchasing ticket for ${salesInfo.price} SEI...`)
+
+      // Execute the purchase
+      const purchaseResult = await ticketService.purchaseTicket(eventId, userProfile.address)
+
+      console.log("TICKET_PURCHASE: Purchase completed successfully")
+      console.log("TICKET_PURCHASE: Ticket ID:", purchaseResult.ticketId)
+      console.log("TICKET_PURCHASE: Ticket name:", purchaseResult.ticketName)
+      console.log("TICKET_PURCHASE: Transaction hash:", purchaseResult.txHash)
+
+      toast.success(
+        `Ticket purchased successfully! 
+        Ticket: ${purchaseResult.ticketName}
+        Price: ${purchaseResult.purchasePrice} SEI
+        Tx: ${purchaseResult.txHash.slice(0, 8)}...`
+      )
+
+    } catch (error: any) {
+      console.error("TICKET_PURCHASE: Error during ticket purchase:", error)
+      
+      // Parse common error messages
+      let errorMessage = error.message || "Failed to purchase ticket"
+      
+      if (errorMessage.includes("insufficient")) {
+        errorMessage = "Insufficient funds to purchase ticket"
+      } else if (errorMessage.includes("sold out") || errorMessage.includes("All tickets sold")) {
+        errorMessage = "This event is sold out"
+      } else if (errorMessage.includes("already")) {
+        errorMessage = "You already have a ticket for this event"
+      } else if (errorMessage.includes("rejected") || errorMessage.includes("denied")) {
+        errorMessage = "Transaction was cancelled"
+      }
+
+      toast.error(errorMessage)
+    }
+  }
+
+  const toggleCardExpansion = (eventId: string) => {
+    const numericId = parseInt(eventId)
+    if (expandedCardId === numericId) {
       setExpandedCardId(null)
     } else {
-      setExpandedCardId(id)
+      setExpandedCardId(numericId)
     }
   }
 
@@ -284,15 +377,15 @@ export default function EventMarket() {
                   </CardContent>
                   <CardFooter className="p-4 pt-0 flex justify-between">
                     <Button variant="outline" size="sm" onClick={() => toggleCardExpansion(event.id)}>
-                      {expandedCardId === event.id ? "Hide Details" : "Details"}
+                      {expandedCardId === parseInt(event.id) ? "Hide Details" : "Details"}
                     </Button>
-                    <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
+                    <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => handleBuyTicket(event)}>
                       Buy Ticket
                     </Button>
                   </CardFooter>
 
                   {/* Expanded Card Content */}
-                  {expandedCardId === event.id && (
+                  {expandedCardId === parseInt(event.id) && (
                     <div className="p-4 pt-0 border-t">
                       <div className="mb-4">
                         <h4 className="font-medium mb-2">Event Description</h4>

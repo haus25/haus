@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Button } from "./ui/button"
 import { Badge } from "./ui/badge"
@@ -14,8 +14,12 @@ import {
   ExternalLink, 
   Link as LinkIcon,
   AlertCircle,
-  Loader2
+  Loader2,
+  Twitch,
+  Cast
 } from "lucide-react"
+import { useSocialAccounts } from "@dynamic-labs/sdk-react-core"
+import { SocialIcon } from '@dynamic-labs/iconic'
 import { SUPPORTED_SOCIAL_PLATFORMS, type SocialPlatform } from "../lib/constants"
 import { useAuth } from "../contexts/auth"
 import { toast } from "sonner"
@@ -32,34 +36,112 @@ interface SocialAccount {
   lastVerified?: Date
 }
 
+// Dynamic social providers that support verification
+const DYNAMIC_PROVIDERS = ['twitter', 'discord', 'github', 'google', 'twitch', 'farcaster'] as const
+type DynamicProvider = typeof DYNAMIC_PROVIDERS[number]
+
+// Map our platform types to Dynamic's provider names
+const PLATFORM_TO_DYNAMIC: Record<string, DynamicProvider | null> = {
+  twitter: 'twitter',
+  discord: 'discord', 
+  github: 'github',
+  twitch: 'twitch',
+  farcaster: 'farcaster',
+  telegram: null, // Not supported by Dynamic
+  website: null, // Custom verification
+}
+
+const Avatar = ({ avatarUrl }: { avatarUrl?: string }) => {
+  return (
+    <div className="avatar w-8 h-8 rounded-full overflow-hidden">
+      <img src={avatarUrl || "/placeholder-user.jpg"} alt="avatar" className="w-full h-full object-cover" />
+    </div>
+  )
+}
+
+const Icon = ({ provider }: { provider: DynamicProvider }) => {
+  return (
+    <div className="icon-container w-8 h-8 flex items-center justify-center">
+      <SocialIcon name={provider} />
+    </div>
+  )
+}
+
 export function SocialVerification({ className }: SocialVerificationProps) {
   const { userProfile, updateProfile, isLoading } = useAuth()
+  const {
+    linkSocialAccount,
+    unlinkSocialAccount,
+    isProcessing,
+    isLinked,
+    getLinkedAccountInformation,
+  } = useSocialAccounts()
+  
   const [isUpdating, setIsUpdating] = useState(false)
   const [editingPlatform, setEditingPlatform] = useState<SocialPlatform | null>(null)
   const [tempValues, setTempValues] = useState<Record<SocialPlatform, string>>({
     twitter: "",
     discord: "",
+    twitch: "",
+    farcaster: "",
     telegram: "",
     github: "",
     website: "",
   })
 
-  // Mock verification status - in a real app, this would come from your backend
-  // that integrates with Dynamic's user verification APIs
-  const [verificationStatus, setVerificationStatus] = useState<Record<SocialPlatform, boolean>>({
-    twitter: false,
-    discord: false,
-    telegram: false,
-    github: false,
-    website: false,
-  })
+  // Sync Dynamic's social account state with user profile
+  useEffect(() => {
+    const syncSocialAccounts = async () => {
+      if (!userProfile) return
+
+      let hasChanges = false
+      const updatedSocials = { ...userProfile.socials }
+
+      // Check each Dynamic provider and sync with user profile
+      DYNAMIC_PROVIDERS.forEach(provider => {
+        const platformKey = Object.keys(PLATFORM_TO_DYNAMIC).find(
+          key => PLATFORM_TO_DYNAMIC[key] === provider
+        ) as SocialPlatform
+
+        if (platformKey) {
+          const isCurrentlyLinked = isLinked(provider as any)
+          const linkedInfo = getLinkedAccountInformation(provider as any)
+          
+          if (isCurrentlyLinked && linkedInfo?.publicIdentifier) {
+            // If linked in Dynamic but not in profile, sync it
+            if (!updatedSocials[platformKey] || updatedSocials[platformKey] !== linkedInfo.publicIdentifier) {
+              updatedSocials[platformKey] = linkedInfo.publicIdentifier
+              hasChanges = true
+            }
+          } else {
+            // If not linked in Dynamic but exists in profile, we might want to keep the manual entry
+            // Only clear if it was automatically set (you might want to add a flag to track this)
+          }
+        }
+      })
+
+      // Update profile if there are changes
+      if (hasChanges) {
+        try {
+          await updateProfile({ socials: updatedSocials })
+          console.log('Social accounts synced with profile')
+        } catch (error) {
+          console.error('Failed to sync social accounts:', error)
+        }
+      }
+    }
+
+    // Debounce the sync to avoid excessive calls
+    const timeoutId = setTimeout(syncSocialAccounts, 1000)
+    return () => clearTimeout(timeoutId)
+  }, [userProfile, isLinked, getLinkedAccountInformation, updateProfile])
 
   const handleEditPlatform = (platform: SocialPlatform) => {
     setEditingPlatform(platform)
-    setTempValues({
-      ...tempValues,
+    setTempValues(prev => ({
+      ...prev,
       [platform]: userProfile?.socials[platform] || ""
-    })
+    }))
   }
 
   const handleSavePlatform = async (platform: SocialPlatform) => {
@@ -90,6 +172,8 @@ export function SocialVerification({ className }: SocialVerificationProps) {
     setTempValues({
       twitter: "",
       discord: "",
+      twitch: "",
+      farcaster: "",
       telegram: "",
       github: "",
       website: "",
@@ -97,21 +181,42 @@ export function SocialVerification({ className }: SocialVerificationProps) {
   }
 
   const handleVerifyPlatform = async (platform: SocialPlatform) => {
-    // In a real implementation, this would:
-    // 1. Redirect to Dynamic's social authentication flow
-    // 2. Handle the callback to verify the account
-    // 3. Update the verification status
+    const dynamicProvider = PLATFORM_TO_DYNAMIC[platform]
     
-    toast.info("Social verification integration coming soon!")
+    if (!dynamicProvider) {
+      toast.info(`${SUPPORTED_SOCIAL_PLATFORMS[platform].name} verification is not supported yet`)
+      return
+    }
+
+    try {
+      await linkSocialAccount(dynamicProvider as any)
+      toast.success(`${SUPPORTED_SOCIAL_PLATFORMS[platform].name} linked successfully!`)
+      
+      // The sync effect will automatically update the profile
+    } catch (error) {
+      console.error('Failed to link social account:', error)
+      toast.error('Failed to link social account')
+    }
+  }
+
+  const handleUnlinkPlatform = async (platform: SocialPlatform) => {
+    const dynamicProvider = PLATFORM_TO_DYNAMIC[platform]
     
-    // For demo purposes, simulate verification
-    setTimeout(() => {
-      setVerificationStatus(prev => ({
-        ...prev,
-        [platform]: true
-      }))
-      toast.success(`${SUPPORTED_SOCIAL_PLATFORMS[platform].name} verified!`)
-    }, 2000)
+    if (!dynamicProvider) return
+
+    try {
+      await unlinkSocialAccount(dynamicProvider as any)
+      toast.success(`${SUPPORTED_SOCIAL_PLATFORMS[platform].name} unlinked successfully!`)
+      
+      // Optionally clear from profile as well
+      const newSocials = { ...userProfile?.socials }
+      delete newSocials[platform]
+      
+      await updateProfile({ socials: newSocials })
+    } catch (error) {
+      console.error('Failed to unlink social account:', error)
+      toast.error('Failed to unlink social account')
+    }
   }
 
   const handleOpenSocial = (platform: SocialPlatform) => {
@@ -131,11 +236,20 @@ export function SocialVerification({ className }: SocialVerificationProps) {
   }
 
   const getSocialIcon = (platform: SocialPlatform) => {
+    const dynamicProvider = PLATFORM_TO_DYNAMIC[platform]
+    if (dynamicProvider) {
+      return <Icon provider={dynamicProvider} />
+    }
+    
     switch (platform) {
-      case 'twitter':
-        return <X className="h-5 w-5" />
       case 'website':
         return <Globe className="h-5 w-5" />
+      case 'telegram':
+        return <LinkIcon className="h-5 w-5" />
+      case 'twitch':
+        return <Twitch className="h-5 w-5" />
+      case 'farcaster':
+        return <Cast className="h-5 w-5" />
       default:
         return <LinkIcon className="h-5 w-5" />
     }
@@ -154,23 +268,15 @@ export function SocialVerification({ className }: SocialVerificationProps) {
       </CardHeader>
       <CardContent className="space-y-6">
         
-        {/* Note about Dynamic configuration */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        {/* Dynamic Integration Status */}
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
           <div className="flex items-start">
-            <AlertCircle className="h-5 w-5 text-blue-500 mt-0.5 mr-3 flex-shrink-0" />
+            <Check className="h-5 w-5 text-green-500 mt-0.5 mr-3 flex-shrink-0" />
             <div>
-              <h4 className="font-medium text-blue-900">Social Provider Setup</h4>
-              <p className="text-sm text-blue-700 mt-1">
-                Social authentication providers (Twitter, Discord, etc.) need to be configured in your{" "}
-                <a 
-                  href="https://app.dynamic.xyz/dashboard/log-in-user-profile" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="underline hover:no-underline"
-                >
-                  Dynamic Dashboard
-                </a>
-                {" "}under the social providers section.
+              <h4 className="font-medium text-green-900">Social Verification Ready</h4>
+              <p className="text-sm text-green-700 mt-1">
+                Connect and verify your social accounts through Dynamic's secure authentication system.
+                Your verified accounts will be linked to your wallet and displayed on your profile.
               </p>
             </div>
           </div>
@@ -178,30 +284,36 @@ export function SocialVerification({ className }: SocialVerificationProps) {
 
         {Object.entries(SUPPORTED_SOCIAL_PLATFORMS).map(([platform, config]) => {
           const typedPlatform = platform as SocialPlatform
+          const dynamicProvider = PLATFORM_TO_DYNAMIC[platform]
+          const isProviderLinked = dynamicProvider ? isLinked(dynamicProvider as any) : false
+          const connectedAccountInfo = dynamicProvider ? getLinkedAccountInformation(dynamicProvider as any) : null
           const value = userProfile?.socials[typedPlatform] || ""
-          const isVerified = verificationStatus[typedPlatform]
           const isEditing = editingPlatform === typedPlatform
 
           return (
             <div key={platform} className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  {getSocialIcon(typedPlatform)}
+                  {isProviderLinked && connectedAccountInfo?.avatar ? (
+                    <Avatar avatarUrl={connectedAccountInfo.avatar} />
+                  ) : (
+                    getSocialIcon(typedPlatform)
+                  )}
                   <div>
                     <h4 className="font-medium">{config.name}</h4>
                     <p className="text-sm text-muted-foreground">
-                      {value || "Not connected"}
+                      {connectedAccountInfo?.publicIdentifier || value || "Not connected"}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center space-x-2">
-                  {isVerified && (
+                  {isProviderLinked && (
                     <Badge variant="default" className="bg-green-100 text-green-800 border-green-200">
                       <Check className="h-3 w-3 mr-1" />
                       Verified
                     </Badge>
                   )}
-                  {value && !isVerified && (
+                  {!isProviderLinked && dynamicProvider && (
                     <Badge variant="secondary">
                       <X className="h-3 w-3 mr-1" />
                       Unverified
@@ -249,33 +361,56 @@ export function SocialVerification({ className }: SocialVerificationProps) {
                 </div>
               ) : (
                 <div className="flex space-x-2">
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => handleEditPlatform(typedPlatform)}
-                    disabled={isLoading}
-                  >
-                    {value ? "Edit" : "Add"}
-                  </Button>
-                  
-                  {value && (
+                  {dynamicProvider ? (
+                    // Dynamic provider - use their verification system
+                    isProviderLinked ? (
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => handleUnlinkPlatform(typedPlatform)}
+                        disabled={isProcessing}
+                      >
+                        {isProcessing ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <X className="h-4 w-4 mr-2" />
+                        )}
+                        Disconnect
+                      </Button>
+                    ) : (
+                      <Button 
+                        size="sm" 
+                        onClick={() => handleVerifyPlatform(typedPlatform)}
+                        disabled={isProcessing}
+                      >
+                        {isProcessing ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <LinkIcon className="h-4 w-4 mr-2" />
+                        )}
+                        Connect
+                      </Button>
+                    )
+                  ) : (
+                    // Non-Dynamic provider - manual entry
                     <>
                       <Button 
                         size="sm" 
                         variant="outline" 
-                        onClick={() => handleOpenSocial(typedPlatform)}
+                        onClick={() => handleEditPlatform(typedPlatform)}
+                        disabled={isLoading}
                       >
-                        <ExternalLink className="h-4 w-4 mr-2" />
-                        Visit
+                        {value ? "Edit" : "Add"}
                       </Button>
                       
-                      {!isVerified && (
+                      {value && (
                         <Button 
                           size="sm" 
-                          onClick={() => handleVerifyPlatform(typedPlatform)}
-                          disabled={isLoading}
+                          variant="outline" 
+                          onClick={() => handleOpenSocial(typedPlatform)}
                         >
-                          Verify
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          Visit
                         </Button>
                       )}
                     </>
@@ -304,13 +439,13 @@ export function SocialVerification({ className }: SocialVerificationProps) {
           <div>
             <h4 className="font-medium">Verification Status</h4>
             <p className="text-sm text-muted-foreground">
-              {Object.values(verificationStatus).filter(Boolean).length} of{" "}
-              {Object.keys(verificationStatus).length} accounts verified
+              {DYNAMIC_PROVIDERS.filter(provider => isLinked(provider as any)).length} of{" "}
+              {DYNAMIC_PROVIDERS.length} supported accounts verified
             </p>
           </div>
           <div className="text-right">
             <div className="text-2xl font-bold">
-              {Math.round((Object.values(verificationStatus).filter(Boolean).length / Object.keys(verificationStatus).length) * 100)}%
+              {Math.round((DYNAMIC_PROVIDERS.filter(provider => isLinked(provider as any)).length / DYNAMIC_PROVIDERS.length) * 100)}%
             </div>
             <p className="text-sm text-muted-foreground">Complete</p>
           </div>

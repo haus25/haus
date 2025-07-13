@@ -4,6 +4,7 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { useWalletClient } from 'wagmi'
 import { Navbar } from "../components/navbar"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
@@ -16,12 +17,13 @@ import { Calendar } from "../components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover"
 import { cn } from "../lib/utils"
 import { format } from "date-fns"
-import { X, CalendarIcon, Clock, Plus } from "lucide-react"
+import { X, CalendarIcon, Clock, Plus, Loader2 } from "lucide-react"
 import { Breadcrumbs } from "../components/breadcrumbs"
 import { QuickAccess } from "../components/quickAccess"
 import { useAuth } from "../contexts/auth"
 import { useEvents } from "../contexts/events"
-import { v4 as uuidv4 } from "uuid"
+import { createEventFactoryService, type EventFormData } from "../services/create"
+
 
 type Step = "category" | "details" | "format" | "sales" | "mint"
 type Category =
@@ -36,10 +38,25 @@ type Duration = 15 | 30 | 60
 
 export default function EventFactory() {
   const router = useRouter()
-  const { userProfile } = useAuth()
+  const { userProfile, isConnected } = useAuth()
   const { addEvent } = useEvents()
+  const { data: walletClient, error: walletClientError } = useWalletClient()
 
   const [step, setStep] = useState<Step>("details")
+  const [isCreating, setIsCreating] = useState(false)
+  const [error, setError] = useState<string>("")
+  const [creationProgress, setCreationProgress] = useState<{
+    currentStep: string;
+    completedSteps: string[];
+    txHash?: string;
+    eventId?: number;
+    ticketFactoryAddress?: string;
+    isComplete: boolean;
+  }>({
+    currentStep: "",
+    completedSteps: [],
+    isComplete: false
+  })
   const [formData, setFormData] = useState({
     category: "" as Category,
     title: "",
@@ -86,18 +103,142 @@ export default function EventFactory() {
     }
   }
 
-  const handleNext = () => {
+  const updateCreationProgress = (currentStep: string, completedSteps?: string[]) => {
+    setCreationProgress(prev => ({
+      ...prev,
+      currentStep,
+      completedSteps: completedSteps || [...prev.completedSteps, prev.currentStep].filter(Boolean)
+    }))
+  }
+
+  const handleNext = async () => {
     if (step === "details") setStep("category")
     else if (step === "category") setStep("format")
     else if (step === "format") setStep("sales")
     else if (step === "sales") setStep("mint")
     else if (step === "mint") {
-      // Create the event and add it to global state
-      const newEvent = {
-        id: uuidv4(),
-        title: formData.title || "Untitled Event",
-        creator: userProfile?.ensName || "anonymous.eth",
-        creatorAddress: userProfile?.address || "",
+      await createEventOnBlockchain()
+    }
+  }
+
+  const createEventOnBlockchain = async () => {
+    if (!isConnected || !userProfile?.address || !walletClient) {
+      const errorMsg = !isConnected ? "Please connect your wallet first" : 
+                      !userProfile?.address ? "User profile not loaded" :
+                      !walletClient ? "Wallet client not available" : "Unknown wallet error"
+      setError(errorMsg)
+      return
+    }
+
+    if (!formData.title || !formData.date || !formData.category) {
+      setError("Please fill in all required fields")
+      return
+    }
+
+    setIsCreating(true)
+    setError("")
+    setCreationProgress({
+      currentStep: "Initializing",
+      completedSteps: [],
+      isComplete: false
+    })
+
+    try {
+      console.log("EVENT_CREATION: Starting blockchain event creation process")
+      console.log("EVENT_CREATION: Wallet client initialized:", !!walletClient)
+      console.log("EVENT_CREATION: User address:", userProfile.address)
+      console.log("EVENT_CREATION: Network connected:", isConnected)
+      
+      if (walletClientError) {
+        console.error("EVENT_CREATION: Wallet client error:", walletClientError)
+        throw new Error(`Wallet client error: ${walletClientError.message}`)
+      }
+
+      // Step 1: Initialize service
+      updateCreationProgress("Initializing service connection")
+      console.log("EVENT_CREATION: Creating EventFactory service instance")
+      const eventFactoryService = createEventFactoryService(walletClient)
+      
+      // Step 2: Prepare form data
+      updateCreationProgress("Preparing event data")
+      console.log("EVENT_CREATION: Preparing event form data")
+      const eventFormData: EventFormData = {
+        title: formData.title,
+        description: formData.description,
+        category: formData.category,
+        banner: formData.banner,
+        date: formData.date,
+        time: formData.time,
+        duration: formData.duration,
+        reservePrice: formData.reservePrice,
+        ticketsAmount: formData.ticketsAmount,
+        ticketPrice: formData.ticketPrice,
+        noCap: formData.noCap,
+      }
+
+      console.log("EVENT_CREATION: Event parameters:")
+      console.log("EVENT_CREATION: - Title:", eventFormData.title)
+      console.log("EVENT_CREATION: - Category:", eventFormData.category)
+      console.log("EVENT_CREATION: - Duration:", eventFormData.duration, "minutes")
+      console.log("EVENT_CREATION: - Reserve price:", eventFormData.reservePrice, "SEI")
+      console.log("EVENT_CREATION: - Ticket price:", eventFormData.ticketPrice, "SEI")
+      console.log("EVENT_CREATION: - Max tickets:", eventFormData.noCap ? "unlimited" : eventFormData.ticketsAmount)
+
+      // Step 3: Execute blockchain transaction
+      updateCreationProgress("Executing blockchain transaction")
+      console.log("EVENT_CREATION: Calling createEvent on CreationWrapper contract")
+      console.log("EVENT_CREATION: This single transaction will:")
+      console.log("EVENT_CREATION: 1. Mint RTA NFT")
+      console.log("EVENT_CREATION: 2. Deploy TicketFactory contract")
+      console.log("EVENT_CREATION: 3. Set up delegation proxy")
+      
+      const contractEventData = await eventFactoryService.createEvent(
+        eventFormData,
+        userProfile.address
+      )
+
+      console.log("EVENT_CREATION: Transaction completed successfully")
+      console.log("EVENT_CREATION: Transaction hash:", contractEventData.txHash)
+      console.log("EVENT_CREATION: Event ID:", contractEventData.eventId)
+      console.log("EVENT_CREATION: TicketFactory address:", contractEventData.ticketFactoryAddress)
+      console.log("EVENT_CREATION: Metadata URI:", contractEventData.metadataURI)
+
+      // Step 4: Update local state
+      updateCreationProgress("Updating application state")
+      console.log("EVENT_CREATION: Creating local event object for state management")
+      
+      // Get the uploaded Banner URL from the metadata
+      let eventImageUrl = "/placeholder.svg?height=200&width=400"
+      
+      try {
+        // Fetch the metadata to get the actual image URL
+        const metadataUri = contractEventData.metadataURI
+        console.log("EVENT_CREATION: Fetching metadata from:", metadataUri)
+        
+        // Convert IPFS URI to gateway URL for fetching
+        const metadataFetchUrl = metadataUri.startsWith('ipfs://') 
+          ? metadataUri.replace('ipfs://', `${process.env.NEXT_PUBLIC_PINATA_URL}`)
+          : metadataUri
+          
+        const metadataResponse = await fetch(metadataFetchUrl)
+        if (metadataResponse.ok) {
+          const metadata = await metadataResponse.json()
+          if (metadata.image) {
+            eventImageUrl = metadata.image
+            console.log("EVENT_CREATION: Retrieved image URL from metadata:", eventImageUrl)
+          }
+        } else {
+          console.warn("EVENT_CREATION: Failed to fetch metadata:", metadataResponse.status, metadataResponse.statusText)
+        }
+      } catch (error) {
+        console.warn("EVENT_CREATION: Could not fetch metadata for image URL:", error)
+      }
+      
+      const localEvent = {
+        id: contractEventData.eventId.toString(),
+        title: formData.title,
+        creator: userProfile?.ensName || userProfile.address,
+        creatorAddress: userProfile.address,
         category: formData.category,
         date: formData.date
           ? new Date(
@@ -112,16 +253,45 @@ export default function EventFactory() {
         maxParticipants: formData.noCap ? 1000 : formData.ticketsAmount,
         ticketPrice: formData.ticketPrice,
         description: formData.description || "No description provided",
-        image: bannerPreviewUrl || "/placeholder.svg?height=200&width=400",
-        status: "upcoming",
+        image: eventImageUrl, // Use the actual IPFS URL instead of blob URL
+        status: "upcoming" as const,
+        contractEventId: contractEventData.eventId,
+        ticketFactoryAddress: contractEventData.ticketFactoryAddress,
+        txHash: contractEventData.txHash,
+        metadataURI: contractEventData.metadataURI,
       }
 
-      // Add the event to global state
-      addEvent(newEvent)
+      addEvent(localEvent)
+      console.log("EVENT_CREATION: Event added to global application state")
 
-      // Show success message and redirect
-      alert("Event created successfully!")
-      router.push("/event-market")
+      // Step 5: Complete
+      setCreationProgress({
+        currentStep: "Complete",
+        completedSteps: ["Initializing", "Preparing event data", "Executing blockchain transaction", "Updating application state"],
+        txHash: contractEventData.txHash,
+        eventId: contractEventData.eventId,
+        ticketFactoryAddress: contractEventData.ticketFactoryAddress,
+        isComplete: true
+      })
+
+      console.log("EVENT_CREATION: Process completed successfully")
+      console.log("EVENT_CREATION: User can now view their event in the event market")
+
+    } catch (error: any) {
+      console.error("EVENT_CREATION: Error during event creation:", error)
+      console.error("EVENT_CREATION: Error details:", {
+        message: error.message,
+        stack: error.stack,
+        code: error.code
+      })
+      setError(error.message || 'Failed to create event. Please try again.')
+      setCreationProgress({
+        currentStep: "Error",
+        completedSteps: [],
+        isComplete: false
+      })
+    } finally {
+      setIsCreating(false)
     }
   }
 
@@ -506,20 +676,154 @@ export default function EventFactory() {
           <div>
             <h2 className="text-2xl font-bold mb-8">Mint Your Event</h2>
             <div className="space-y-8">
-              <div className="border rounded-lg p-8 text-center">
-                <h3 className="text-2xl mb-4">Ready to Mint Your Event</h3>
-                <p className="text-muted-foreground mb-6">
-                  Your event details are complete. Click the button below to mint your event NFT and make it available
-                  in the marketplace.
-                </p>
-                <Button
-                  size="lg"
-                  className="bg-primary text-primary-foreground hover:bg-primary/90"
-                  onClick={handleNext}
-                >
-                  Mint Event NFT
-                </Button>
-              </div>
+              {error && (
+                <div className="border border-red-500 rounded-lg p-4 bg-red-50 text-red-700">
+                  <h4 className="font-medium">Error</h4>
+                  <p className="text-sm">{error}</p>
+                </div>
+              )}
+              
+              {!creationProgress.isComplete ? (
+                <div className="border rounded-lg p-8 text-center">
+                  <h3 className="text-2xl mb-4">Ready to Mint Your Event</h3>
+                  <p className="text-muted-foreground mb-6">
+                    Your event details are complete. Click the button below to mint your event NFT on the Sei blockchain
+                    and deploy all necessary smart contracts.
+                  </p>
+                  
+                  {!isConnected || !walletClient ? (
+                    <div className="mb-6">
+                      <p className="text-red-600 mb-4">Please connect your wallet to continue</p>
+                    </div>
+                  ) : null}
+                  
+                  <Button
+                    size="lg"
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                    onClick={handleNext}
+                    disabled={isCreating || !isConnected || !walletClient}
+                  >
+                    {isCreating ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Creating Event...
+                      </>
+                    ) : (
+                      "Mint Event NFT"
+                    )}
+                  </Button>
+                  
+                  {isCreating && (
+                    <div className="mt-6 text-left">
+                      <p className="text-sm text-muted-foreground mb-4">Creation Progress:</p>
+                      <div className="space-y-3">
+                        {[
+                          "Initializing service connection",
+                          "Preparing event data", 
+                          "Executing blockchain transaction",
+                          "Updating application state"
+                        ].map((stepName, index) => {
+                          const isCompleted = creationProgress.completedSteps.includes(stepName)
+                          const isCurrent = creationProgress.currentStep === stepName
+                          const isUpcoming = !isCompleted && !isCurrent
+                          
+                          return (
+                            <div key={stepName} className="flex items-center space-x-3">
+                              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
+                                isCompleted ? "bg-green-500 text-white" :
+                                isCurrent ? "bg-primary text-white" :
+                                "bg-muted text-muted-foreground"
+                              }`}>
+                                {isCompleted ? "✓" : 
+                                 isCurrent ? <Loader2 className="w-3 h-3 animate-spin" /> :
+                                 index + 1}
+                              </div>
+                              <span className={`text-sm ${
+                                isCompleted ? "text-green-600" :
+                                isCurrent ? "text-primary font-medium" :
+                                "text-muted-foreground"
+                              }`}>
+                                {stepName}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      
+                      {creationProgress.currentStep === "Executing blockchain transaction" && (
+                        <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                          <p className="text-sm text-blue-800 font-medium">Single Transaction Process:</p>
+                          <ul className="text-xs text-blue-700 mt-2 space-y-1">
+                            <li>• Mint RTA NFT</li>
+                            <li>• Deploy TicketFactory contract</li>
+                            <li>• Set up delegation proxy</li>
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="border border-green-500 rounded-lg p-8 bg-green-50">
+                  <div className="text-center">
+                    <div className="w-16 h-16 bg-green-500 text-white rounded-full flex items-center justify-center mx-auto mb-4">
+                      <span className="text-2xl">✓</span>
+                    </div>
+                    <h3 className="text-2xl font-bold text-green-800 mb-2">Event Created Successfully!</h3>
+                    <p className="text-green-700 mb-6">
+                      Your RTA NFT has been minted and all smart contracts have been deployed.
+                    </p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div className="bg-white p-4 rounded-lg border">
+                      <h4 className="font-medium text-gray-800 mb-2">Event Details</h4>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Event ID:</span>
+                          <span className="font-mono">{creationProgress.eventId}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Title:</span>
+                          <span>{formData.title}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="bg-white p-4 rounded-lg border">
+                      <h4 className="font-medium text-gray-800 mb-2">Smart Contracts</h4>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">TicketFactory:</span>
+                          <span className="font-mono text-xs">{creationProgress.ticketFactoryAddress?.slice(0, 10)}...</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Transaction:</span>
+                          <span className="font-mono text-xs">{creationProgress.txHash?.slice(0, 10)}...</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                    <Button
+                      onClick={() => router.push("/event-market")}
+                      className="bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      View in Event Market
+                    </Button>
+                    {creationProgress.txHash && (
+                      <Button
+                        variant="outline"
+                        onClick={() => window.open(`https://seitrace.com/tx/${creationProgress.txHash}?chain=atlantic-2`, '_blank')}
+                        className="flex items-center gap-2"
+                      >
+                        View Transaction
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="border rounded-lg p-6">
                 <h4 className="font-medium mb-4">Event Summary</h4>
@@ -622,7 +926,7 @@ export default function EventFactory() {
 
         <div className="flex justify-between">
           {step !== "category" ? (
-            <Button variant="outline" onClick={handleBack}>
+            <Button variant="outline" onClick={handleBack} disabled={isCreating}>
               Back
             </Button>
           ) : (
@@ -631,10 +935,15 @@ export default function EventFactory() {
 
           <Button
             onClick={handleNext}
-            disabled={step === "details" && !formData.title}
+            disabled={(step === "details" && !formData.title) || isCreating}
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
-            {step === "mint" ? "Finish" : "Next"}
+            {isCreating ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creating...
+              </>
+            ) : step === "mint" ? "Create Event" : "Next"}
           </Button>
         </div>
       </main>

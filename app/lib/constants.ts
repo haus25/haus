@@ -40,6 +40,18 @@ export const SUPPORTED_SOCIAL_PLATFORMS = {
     baseUrl: "https://discord.com/users/",
     placeholder: "username#1234",
   },
+  twitch: {
+    name: "Twitch",
+    icon: "twitch",
+    baseUrl: "https://twitch.tv/",
+    placeholder: "username",
+  },
+  farcaster: {
+    name: "Farcaster",
+    icon: "farcaster",
+    baseUrl: "https://warpcast.com/",
+    placeholder: "username",
+  },
   telegram: {
     name: "Telegram",
     icon: "telegram",

@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   title: "Haus | Reality, in the making.",
   description:
     "Haus introduces dynamic, Real-Time Assets to the NFT space. Enter the Artist's workshop, and own artworks which acquire value with time.",
-  metadataBase: new URL("https://haus.art"),
+  metadataBase: new URL("https://haus25.live"),
   openGraph: {
     title: "Haus | Reality, in the making.",
     description:

@@ -22,14 +22,14 @@ export const Footer = memo(function Footer() {
           <div className="flex flex-col gap-4">
             <h3 className="text-sm font-medium bauhaus-text">COMMUNITY</h3>
             <div className="flex gap-4">
-              <Link href="https://x.com/haus0x" target="_blank" className="text-muted-foreground hover:text-foreground">
+              <Link href="https://x.com/haus25_live" target="_blank" className="text-muted-foreground hover:text-foreground">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                   <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
                 </svg>
                 <span className="sr-only">X (Twitter)</span>
               </Link>
               <Link
-                href="https://github.com/haus0x"
+                href="https://github.com/haus25"
                 target="_blank"
                 className="text-muted-foreground hover:text-foreground"
               >
@@ -39,7 +39,7 @@ export const Footer = memo(function Footer() {
                 <span className="sr-only">GitHub</span>
               </Link>
               <Link
-                href="https://discord.gg/haus0x"
+                href="https://discord.gg/haus25"
                 target="_blank"
                 className="text-muted-foreground hover:text-foreground"
               >

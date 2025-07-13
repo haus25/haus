@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
-import Link from "next/link"
+import { Wallet, User, Brush, Ticket, Settings, LogOut } from "lucide-react"
+import { DynamicWidget } from '@dynamic-labs/sdk-react-core'
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
 import { Button } from "./ui/button"
 import {
   DropdownMenu,
@@ -12,80 +13,39 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdownMenu"
-import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
-import { User, Wallet, Ticket, Brush, Settings, LogOut } from "lucide-react"
-import { LoginModal } from "./loginModal"
-import { WaitlistModal } from "./waitlist"
 import { useAuth } from "../contexts/auth"
+import { SettingsModal } from "./settings"
+import Link from "next/link"
 
 export function UserNav() {
-  const { isConnected, isLoading, userProfile, disconnect, hasInviteAccess } = useAuth()
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
-  const [isWaitlistModalOpen, setIsWaitlistModalOpen] = useState(false)
+  const { userProfile, disconnect } = useAuth()
 
-  const handleConnect = () => {
-    if (!hasInviteAccess) {
-      setIsWaitlistModalOpen(true)
-    } else {
-      setIsLoginModalOpen(true)
-    }
+  if (!userProfile) {
+    return <DynamicWidget />
   }
-
-  if (isLoading) {
-    return (
-      <Button disabled className="bg-background text-foreground border border-input hover:bg-accent">
-        Connecting...
-      </Button>
-    )
-  }
-
-  if (!isConnected || !userProfile) {
-    return (
-      <>
-        <Button onClick={handleConnect} className="bg-background text-foreground border border-input hover:bg-accent">
-          Connect Wallet
-        </Button>
-        {hasInviteAccess ? (
-          <LoginModal
-            isOpen={isLoginModalOpen}
-            onClose={() => setIsLoginModalOpen(false)}
-            redirectPath="/profile" // Redirect to profile after login
-          />
-        ) : (
-          <WaitlistModal
-            isOpen={isWaitlistModalOpen}
-            onClose={() => setIsWaitlistModalOpen(false)}
-            redirectPath="/event-market" // Redirect to event market after successful code entry
-          />
-        )}
-      </>
-    )
-  }
-
-  const displayName =
-    userProfile.ensName ||
-    userProfile.address.substring(0, 6) + "..." + userProfile.address.substring(userProfile.address.length - 4)
-  const avatarSrc = userProfile.avatar || "/placeholder.svg?height=32&width=32"
-  const initials = (userProfile.ensName || "WA").substring(0, 2).toUpperCase()
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-8 w-8 rounded-full">
           <Avatar className="h-8 w-8">
-            <AvatarImage src={avatarSrc} alt={displayName} />
-            <AvatarFallback>{initials}</AvatarFallback>
+            <AvatarImage src={userProfile.avatar || ""} alt={userProfile.displayName || ""} />
+            <AvatarFallback>
+              {userProfile.displayName?.slice(0, 2).toUpperCase() || 
+               userProfile.ensName?.slice(0, 2).toUpperCase() ||
+               userProfile.address?.slice(2, 4).toUpperCase()}
+            </AvatarFallback>
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">{displayName}</p>
+            <p className="text-sm font-medium leading-none">
+              {userProfile.displayName || userProfile.ensName || "Anonymous"}
+            </p>
             <p className="text-xs leading-none text-muted-foreground">
-              {userProfile.address.substring(0, 6) +
-                "..." +
-                userProfile.address.substring(userProfile.address.length - 4)}
+              {userProfile.address?.slice(0, 6)}...{userProfile.address?.slice(-4)}
             </p>
           </div>
         </DropdownMenuLabel>
@@ -115,12 +75,12 @@ export function UserNav() {
               <span>Wallet</span>
             </Link>
           </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link href="/profile/settings">
+          <SettingsModal>
+            <DropdownMenuItem onSelect={(e: Event) => e.preventDefault()}>
               <Settings className="mr-2 h-4 w-4" />
               <span>Settings</span>
-            </Link>
-          </DropdownMenuItem>
+            </DropdownMenuItem>
+          </SettingsModal>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={disconnect}>

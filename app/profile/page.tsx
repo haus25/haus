@@ -70,9 +70,21 @@ export default function Profile() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>(
     userProfile?.favoriteCategories || []
   )
+  const [activeTab, setActiveTab] = useState("events")
 
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const bannerInputRef = useRef<HTMLInputElement>(null)
+
+  // Handle tab from URL parameters
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search)
+      const tab = urlParams.get('tab')
+      if (tab && ['events', 'tickets', 'favorites'].includes(tab)) {
+        setActiveTab(tab)
+      }
+    }
+  }, [])
 
   // Update local state when userProfile changes
   useEffect(() => {
@@ -579,7 +591,7 @@ export default function Profile() {
 
           {/* Main Content */}
           <div className="lg:col-span-2">
-            <Tabs defaultValue="events" className="w-full">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="events">Your Events</TabsTrigger>
                 <TabsTrigger value="tickets">Your Tickets</TabsTrigger>

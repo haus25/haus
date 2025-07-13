@@ -32,6 +32,7 @@ interface UserProfile extends Partial<UserProfileData> {
     twitter?: string
     discord?: string
     farcaster?: string
+    twitch?: string
     telegram?: string
     github?: string
     website?: string
@@ -97,6 +98,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             walletConnectors: [EthereumWalletConnectors],
             networkValidationMode: 'always',
             initialAuthenticationMode: 'connect-only',
+            socialProvidersFilter: (providers) => providers.filter((provider) =>
+              ['twitter', 'discord', 'github', 'google', 'twitch', 'farcaster'].includes(provider)
+            ),
           }}
         >
           <DynamicWagmiConnector>
@@ -131,71 +135,82 @@ function AuthContextContent({
   const [walletStats, setWalletStats] = useState<WalletStats | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
-  // Load user profile and wallet data when wallet connects
+  // Load user profile data from IPFS
   useEffect(() => {
     const loadUserData = async () => {
-      if (isConnected && address) {
-        setIsLoading(true)
+      if (!address || !isConnected) {
+        console.log('AUTH: No address or not connected, skipping profile load')
+        return
+      }
+
+      setIsLoading(true)
+      console.log('AUTH: Loading user profile for address:', address)
+
+      try {
+        // Try to load existing profile from Pinata
+        const existingProfile = await loadUserProfile(address)
         
-        try {
-          // Auto-validate and prompt network switch if needed
-          if (!validateSeiNetwork(chainId)) {
-            console.warn('Please switch to Sei Testnet (Chain ID: 1328)')
-          }
-
-          // Load profile data from IPFS/Pinata
-          const profileData = await loadUserProfile(address)
+        if (existingProfile) {
+          console.log('AUTH: Loaded existing profile from IPFS')
+          console.log('AUTH: Profile name:', existingProfile.displayName || existingProfile.ensName)
           
-          // Get wallet stats
-          const walletData = await getWalletStatsWithCache(address)
-          setWalletStats(walletData)
-
-                     // Create or update profile
-           const profile: UserProfile = {
-             address: address.toLowerCase(),
-             ensName: user?.email || primaryWallet?.connector?.name || undefined,
-             displayName: profileData?.displayName || user?.email || primaryWallet?.connector?.name || undefined,
-             avatar: profileData?.avatar || undefined,
-             bio: profileData?.bio || undefined,
-             favoriteCategories: profileData?.favoriteCategories || [],
-             socials: profileData?.socials || {},
-             isProfileComplete: profileData?.isProfileComplete || false,
-             walletStats: walletData,
-           }
+          setUserProfile({
+            address,
+            ensName: user?.email || primaryWallet?.connector?.name || undefined,
+            displayName: existingProfile.displayName || existingProfile.ensName || `User ${address.slice(0, 6)}`,
+            avatar: existingProfile.avatar,
+            banner: existingProfile.banner,
+            bio: existingProfile.bio,
+            favoriteCategories: existingProfile.favoriteCategories || [],
+            socials: existingProfile.socials || {},
+            isProfileComplete: existingProfile.isProfileComplete || false,
+            walletStats: walletStats || undefined
+          })
+        } else {
+          console.log('AUTH: No existing profile found, creating default profile')
           
-          setUserProfile(profile)
-          
-          // Save to localStorage for quick access
-          localStorage.setItem("haus_auth", JSON.stringify({ 
-            isConnected: true, 
-            userProfile: profile,
-            walletStats: walletData,
-          }))
-
-        } catch (error) {
-          console.error("Failed to load user data:", error)
-          
-          // Fallback to basic profile
-          const basicProfile: UserProfile = {
-            address: address.toLowerCase(),
-            ensName: user?.email || primaryWallet?.connector?.name || null,
+          // Create a default profile
+          const defaultProfile: UserProfile = {
+            address,
+            ensName: user?.email || primaryWallet?.connector?.name || undefined,
+            displayName: user?.email || primaryWallet?.connector?.name || `Creator ${address.slice(0, 6)}`,
             favoriteCategories: [],
             socials: {},
             isProfileComplete: false,
+            walletStats: walletStats || undefined
           }
-          setUserProfile(basicProfile)
-        } finally {
-          setIsLoading(false)
+          
+          setUserProfile(defaultProfile)
+          
+          // Save the default profile to IPFS for future use
+          try {
+            await updateUserProfile(address, defaultProfile)
+            console.log('AUTH: Default profile saved to IPFS')
+          } catch (error) {
+            console.warn('AUTH: Failed to save default profile to IPFS:', error)
+          }
         }
-      } else {
-        setUserProfile(null)
-        setWalletStats(null)
-        localStorage.removeItem("haus_auth")
+
+      } catch (error) {
+        console.error('AUTH: Error loading user profile:', error)
+        
+        // Fallback to basic profile
+        setUserProfile({
+          address,
+          ensName: user?.email || primaryWallet?.connector?.name || undefined,
+          displayName: user?.email || primaryWallet?.connector?.name || `Creator ${address.slice(0, 6)}`,
+          favoriteCategories: [],
+          socials: {},
+          isProfileComplete: false,
+          walletStats: walletStats || undefined
+        })
+      } finally {
+        setIsLoading(false)
       }
     }
 
     loadUserData()
-  }, [isConnected, address, chainId, user, primaryWallet])
+  }, [isConnected, address, chainId, user, primaryWallet, walletStats])
 
   // Load saved auth state on mount
   useEffect(() => {

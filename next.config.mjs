@@ -16,7 +16,7 @@ const nextConfig = {
   },
   images: {
     unoptimized: true,
-    domains: ['storage.googleapis.com'],
+    domains: ['storage.googleapis.com', 'gray-clean-parrotfish-186.mypinata.cloud'],
     formats: ['image/avif', 'image/webp'],
   },
   experimental: {
@@ -28,6 +28,11 @@ const nextConfig = {
   },
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production', // Remove console.log in production
+  },
+  webpack: (config) => {
+    // Dynamic requires these externals to be configured
+    config.externals.push("pino-pretty", "lokijs", "encoding");
+    return config;
   },
 }
 

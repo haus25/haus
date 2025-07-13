@@ -62,7 +62,7 @@ export function RtaInfoModal({ open, onClose }: RtaInfoModalProps) {
               <li className="pl-2">
                 <span className="font-medium">Value is distributed</span>
                 <p className="text-muted-foreground mt-1 pl-6">
-                  Artists receive 80%, platform takes 10%, and 10% goes to curators or is redistributed to participants
+                  Artists receive 80%, platform takes 10%, and up to 10% goes to curators
                 </p>
               </li>
             </ol>
