@@ -148,76 +148,41 @@ export class EventFactoryService {
   }
 
   /**
-   * Upload banner image to Pinata and return IPFS URI
+   * Generate placeholder banner image URL
    */
   async uploadBannerImage(file: File): Promise<string> {
-    console.log('IPFS_UPLOAD: Starting banner image upload to Pinata')
-    console.log('IPFS_UPLOAD: File size:', file.size, 'bytes')
-    console.log('IPFS_UPLOAD: File type:', file.type)
+    console.log('IMAGE_UPLOAD: Generating placeholder banner image')
+    console.log('IMAGE_UPLOAD: File size:', file.size, 'bytes')
+    console.log('IMAGE_UPLOAD: File type:', file.type)
     
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      
-      const response = await fetch('/api/pinata/upload-file', {
-        method: 'POST',
-        body: formData
-      })
-      
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Failed to upload image: ${response.statusText} - ${errorText}`)
-      }
-      
-      const { ipfsHash, pinataUrl } = await response.json()
-      console.log('IPFS_UPLOAD: Banner image uploaded successfully')
-      console.log('IPFS_UPLOAD: IPFS hash:', ipfsHash)
-      console.log('IPFS_UPLOAD: Gateway URL:', pinataUrl)
-      
-      // Return proxied URL for authenticated access
-      const proxiedUrl = `/api/pinata/get-image?cid=${ipfsHash}`
-      console.log('IPFS_UPLOAD: Proxied URL:', proxiedUrl)
-      
-      return proxiedUrl
-    } catch (error) {
-      console.error('IPFS_UPLOAD: Error uploading banner image:', error)
-      throw new Error('Failed to upload banner image to IPFS')
-    }
+    // Return a placeholder image URL based on file hash for consistency
+    const seed = Array.from(new Uint8Array(await file.arrayBuffer()))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+      .slice(0, 16)
+    
+    const placeholderUrl = `https://api.dicebear.com/7.x/shapes/svg?seed=${seed}&size=800`
+    console.log('IMAGE_UPLOAD: Placeholder URL generated:', placeholderUrl)
+    
+    return placeholderUrl
   }
 
   /**
-   * Upload metadata to Pinata and return IPFS URI
+   * Generate mock metadata URI
    */
   async uploadMetadata(metadata: EventMetadata): Promise<string> {
-    console.log('IPFS_UPLOAD: Starting metadata upload to Pinata')
-    console.log('IPFS_UPLOAD: Metadata name:', metadata.name)
-    console.log('IPFS_UPLOAD: Metadata category:', metadata.category)
-    console.log('IPFS_UPLOAD: Metadata attributes count:', metadata.attributes.length)
+    console.log('METADATA_UPLOAD: Generating mock metadata URI')
+    console.log('METADATA_UPLOAD: Metadata name:', metadata.name)
+    console.log('METADATA_UPLOAD: Metadata category:', metadata.category)
+    console.log('METADATA_UPLOAD: Metadata attributes count:', metadata.attributes.length)
     
-    try {
-      const response = await fetch('/api/pinata/upload-metadata', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(metadata)
-      })
-      
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Failed to upload metadata: ${response.statusText} - ${errorText}`)
-      }
-      
-      const { ipfsHash, pinataUrl } = await response.json()
-      console.log('IPFS_UPLOAD: Metadata uploaded successfully')
-      console.log('IPFS_UPLOAD: IPFS hash:', ipfsHash)
-      console.log('IPFS_UPLOAD: IPFS URI:', `ipfs://${ipfsHash}`)
-      
-      return `ipfs://${ipfsHash}`
-    } catch (error) {
-      console.error('IPFS_UPLOAD: Error uploading metadata:', error)
-      throw new Error('Failed to upload metadata to IPFS')
-    }
+    // Generate a mock IPFS URI for consistency
+    const mockHash = btoa(JSON.stringify(metadata)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 46)
+    const mockUri = `ipfs://${mockHash}`
+    
+    console.log('METADATA_UPLOAD: Mock URI generated:', mockUri)
+    
+    return mockUri
   }
 
   /**
@@ -295,23 +260,13 @@ export class EventFactoryService {
       const ticketPriceWei = BigInt(Math.floor(formData.ticketPrice * 1e18))
       const ticketsAmount = formData.noCap ? 1000 : formData.ticketsAmount
 
-      // For now, use the user address as delegatee - this can be changed to a backend address
-      const delegatee = userAddress
-
-      console.log('CONTRACT_CALL: Step 3 - Preparing contract parameters')
-      console.log('CONTRACT_CALL: Start date:', startDateUnix, '(' + startDateTime.toISOString() + ')')
-      console.log('CONTRACT_CALL: Event duration:', formData.duration, 'minutes')
-      console.log('CONTRACT_CALL: Reserve price:', formData.reservePrice, 'SEI')
-      console.log('CONTRACT_CALL: Metadata URI:', metadataURI)
-      console.log('CONTRACT_CALL: Tickets amount:', ticketsAmount)
-      console.log('CONTRACT_CALL: Ticket price:', formData.ticketPrice, 'SEI')
-      console.log('CONTRACT_CALL: Delegatee address:', delegatee)
-
-      // Step 5: Get current event count to know what the new event ID will be
-      console.log('CONTRACT_CALL: Step 4 - Getting current event count from EventFactory')
+      // For simplified event creation without delegation
+      console.log('CONTRACT_CALL: User address (creator):', userAddress)
+      
+      // Step 5: Get current events count to predict the new event ID
       const currentEventId = await this.publicClient.readContract({
-        address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
-        abi: EVENT_FACTORY_ABI,
+        address: CONTRACT_ADDRESSES.CreationWrapper as `0x${string}`,
+        abi: CREATION_WRAPPER_ABI,
         functionName: 'totalEvents'
       })
       
@@ -324,8 +279,7 @@ export class EventFactoryService {
       console.log('CONTRACT_CALL: This transaction will perform the following operations:')
       console.log('CONTRACT_CALL: 1. Mint RTA NFT with event metadata')
       console.log('CONTRACT_CALL: 2. Deploy dedicated TicketFactory contract for this event')
-      console.log('CONTRACT_CALL: 3. Set up delegation proxy for event management')
-      console.log('CONTRACT_CALL: 4. Configure revenue distribution (80% creator, 20% treasury)')
+      console.log('CONTRACT_CALL: 3. Configure revenue distribution (80% creator, 20% treasury)')
       
       const { request } = await this.publicClient.simulateContract({
         address: CONTRACT_ADDRESSES.CreationWrapper as `0x${string}`,
@@ -338,7 +292,7 @@ export class EventFactoryService {
           metadataURI,
           BigInt(ticketsAmount),
           ticketPriceWei,
-          delegatee as `0x${string}`
+          userAddress as `0x${string}` // Use user address instead of delegatee
         ],
         account: userAddress as `0x${string}`
       })
@@ -365,7 +319,6 @@ export class EventFactoryService {
       // Look for specific events to confirm operations
       let rtaNftMinted = false
       let ticketFactoryDeployed = false
-      let delegationSetup = false
       
       receipt.logs.forEach((log: any, index: number) => {
         try {
@@ -446,7 +399,6 @@ export class EventFactoryService {
       console.log('CONTRACT_CALL: 🎉 Event creation summary:')
       console.log('CONTRACT_CALL: - RTA NFT minted:', rtaNftMinted ? '✅' : '⚠️')
       console.log('CONTRACT_CALL: - TicketFactory deployed:', ticketFactoryDeployed ? '✅' : '⚠️')
-      console.log('CONTRACT_CALL: - Delegation setup:', delegationSetup ? '✅' : '⚠️ (will be verified separately)')
       console.log('CONTRACT_CALL: - Transaction hash:', txHash)
       console.log('CONTRACT_CALL: - Block number:', receipt.blockNumber.toString())
 

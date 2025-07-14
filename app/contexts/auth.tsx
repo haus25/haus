@@ -147,7 +147,7 @@ function AuthContextContent({
       console.log('AUTH: Loading user profile for address:', address)
 
       try {
-        // Try to load existing profile from Pinata
+        // Try to load existing profile from localStorage
         const existingProfile = await loadUserProfile(address)
         
         if (existingProfile) {
@@ -280,7 +280,7 @@ function AuthContextContent({
         updatedAt: Date.now(),
       }
 
-      // Save to IPFS/Pinata
+      // Save to localStorage
       await updateUserProfile(address, profileDataForIPFS)
 
       // Update local state

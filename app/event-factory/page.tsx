@@ -190,7 +190,6 @@ export default function EventFactory() {
       console.log("EVENT_CREATION: This single transaction will:")
       console.log("EVENT_CREATION: 1. Mint RTA NFT")
       console.log("EVENT_CREATION: 2. Deploy TicketFactory contract")
-      console.log("EVENT_CREATION: 3. Set up delegation proxy")
       
       const contractEventData = await eventFactoryService.createEvent(
         eventFormData,
@@ -215,20 +214,11 @@ export default function EventFactory() {
         const metadataUri = contractEventData.metadataURI
         console.log("EVENT_CREATION: Fetching metadata from:", metadataUri)
         
-        // Convert IPFS URI to gateway URL for fetching
-        const metadataFetchUrl = metadataUri.startsWith('ipfs://') 
-          ? metadataUri.replace('ipfs://', `${process.env.NEXT_PUBLIC_PINATA_URL}`)
-          : metadataUri
-          
-        const metadataResponse = await fetch(metadataFetchUrl)
-        if (metadataResponse.ok) {
-          const metadata = await metadataResponse.json()
-          if (metadata.image) {
-            eventImageUrl = metadata.image
-            console.log("EVENT_CREATION: Retrieved image URL from metadata:", eventImageUrl)
-          }
-        } else {
-          console.warn("EVENT_CREATION: Failed to fetch metadata:", metadataResponse.status, metadataResponse.statusText)
+        // Since we're using mock metadata URIs, we'll use the banner URL directly
+        if (eventFormData.banner) {
+          const bannerUrl = await eventFactoryService.uploadBannerImage(eventFormData.banner)
+          eventImageUrl = bannerUrl
+          console.log("EVENT_CREATION: Using banner URL:", bannerUrl)
         }
       } catch (error) {
         console.warn("EVENT_CREATION: Could not fetch metadata for image URL:", error)
@@ -756,7 +746,6 @@ export default function EventFactory() {
                           <ul className="text-xs text-blue-700 mt-2 space-y-1">
                             <li>• Mint RTA NFT</li>
                             <li>• Deploy TicketFactory contract</li>
-                            <li>• Set up delegation proxy</li>
                           </ul>
                         </div>
                       )}

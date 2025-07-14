@@ -16,7 +16,7 @@ const nextConfig = {
   },
   images: {
     unoptimized: true,
-    domains: ['storage.googleapis.com', 'gray-clean-parrotfish-186.mypinata.cloud'],
+    domains: ['storage.googleapis.com', 'api.dicebear.com'],
     formats: ['image/avif', 'image/webp'],
   },
   experimental: {

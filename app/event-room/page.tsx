@@ -52,7 +52,7 @@ export default function EventRoom() {
   const [showChat, setShowChat] = useState(false)
   const [viewMode, setViewMode] = useState<"watch" | "stream">("watch")
   const [isTipModalOpen, setIsTipModalOpen] = useState(false)
-  const [hasDelegation, setHasDelegation] = useState(false)
+
   const [isCameraOn, setIsCameraOn] = useState(true)
   const [isMicOn, setIsMicOn] = useState(true)
   const [isScreenSharing, setIsScreenSharing] = useState(false)
@@ -219,8 +219,7 @@ export default function EventRoom() {
         timestamp: new Date().toISOString(),
       },
     ])
-    // Update delegation status if it was just set
-    setHasDelegation(true)
+
   }
 
   const toggleFullscreen = () => {
@@ -542,7 +541,7 @@ export default function EventRoom() {
         onSuccess={handleTipSuccess}
         tipAmount={tipAmount}
         onTipAmountChange={setTipAmount}
-        hasDelegation={hasDelegation}
+        
       />
     </div>
   )

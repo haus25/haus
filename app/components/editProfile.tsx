@@ -32,7 +32,6 @@ import {
 import { useAuth } from "../contexts/auth"
 import { SUPPORTED_SOCIAL_PLATFORMS, type SocialPlatform } from "../lib/constants"
 import { toast } from "sonner"
-import { ipfsToPublicUrl } from "../lib/pinata"
 
 interface editProfileProps {
   children: React.ReactNode
@@ -297,7 +296,7 @@ export function editProfile({ children }: editProfileProps) {
                             onClick={handleBannerUpload}
                           >
                             <img
-                              src={profileData.banner ? ipfsToPublicUrl(profileData.banner) : "/placeholder.svg"}
+                              src={profileData.banner || "/placeholder.svg"}
                               alt="Profile banner"
                               className="w-full h-full object-cover"
                             />
@@ -322,7 +321,7 @@ export function editProfile({ children }: editProfileProps) {
                               onClick={handleAvatarUpload}
                             >
                               <Avatar className="h-20 w-20 border-2 border-muted">
-                                <AvatarImage src={profileData.avatar ? ipfsToPublicUrl(profileData.avatar) : undefined} alt={profileData.displayName} />
+                                <AvatarImage src={profileData.avatar || undefined} alt={profileData.displayName} />
                                 <AvatarFallback>
                                   {profileData.displayName?.slice(0, 2).toUpperCase() || 
                                    userProfile?.address?.slice(2, 4).toUpperCase()}
