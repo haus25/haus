@@ -210,15 +210,27 @@ export default function EventFactory() {
       let eventImageUrl = "/placeholder.svg?height=200&width=400"
       
       try {
-        // Fetch the metadata to get the actual image URL
+        // Fetch the metadata from IPFS to get the actual image URL
         const metadataUri = contractEventData.metadataURI
         console.log("EVENT_CREATION: Fetching metadata from:", metadataUri)
         
-        // Since we're using mock metadata URIs, we'll use the banner URL directly
-        if (eventFormData.banner) {
-          const bannerUrl = await eventFactoryService.uploadBannerImage(eventFormData.banner)
-          eventImageUrl = bannerUrl
-          console.log("EVENT_CREATION: Using banner URL:", bannerUrl)
+        if (metadataUri.startsWith('ipfs://')) {
+          // Convert IPFS URI to gateway URL for fetching
+          const ipfsHash = metadataUri.slice(7) // Remove 'ipfs://' prefix
+          const gatewayUrl = `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${ipfsHash}`
+          
+          console.log("EVENT_CREATION: Fetching metadata from gateway:", gatewayUrl)
+          
+          const metadataResponse = await fetch(gatewayUrl)
+          if (metadataResponse.ok) {
+            const metadata = await metadataResponse.json()
+            if (metadata.image) {
+              eventImageUrl = metadata.image
+              console.log("EVENT_CREATION: Using image URL from metadata:", eventImageUrl)
+            }
+          } else {
+            console.warn("EVENT_CREATION: Failed to fetch metadata, using placeholder")
+          }
         }
       } catch (error) {
         console.warn("EVENT_CREATION: Could not fetch metadata for image URL:", error)

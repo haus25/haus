@@ -60,7 +60,7 @@ export function editProfile({ children }: editProfileProps) {
   })
   
   const [selectedCategories, setSelectedCategories] = useState<string[]>(
-    userProfile?.favoriteCategories || []
+    userProfile?.preferences || []
   )
   
   // Settings state
@@ -92,7 +92,7 @@ export function editProfile({ children }: editProfileProps) {
         banner: userProfile.banner || "",
         socials: userProfile.socials || {},
       })
-      setSelectedCategories(userProfile.favoriteCategories || [])
+      setSelectedCategories(userProfile.preferences || [])
     }
   }, [userProfile])
 
@@ -173,7 +173,7 @@ export function editProfile({ children }: editProfileProps) {
         displayName: profileData.displayName,
         bio: profileData.bio,
         socials: profileData.socials,
-        favoriteCategories: selectedCategories,
+        preferences: selectedCategories,
         isProfileComplete: true,
       })
       

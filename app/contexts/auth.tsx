@@ -23,11 +23,12 @@ import {
 // Enhanced user profile interface that extends the profile service interface
 interface UserProfile extends Partial<UserProfileData> {
   address: string
-  ensName?: string | null
+  name: string // Progressive username (haus_001, haus_002, etc.)
   displayName?: string
   avatar?: string | null
+  banner?: string | null
   bio?: string | null
-  favoriteCategories: string[]
+  preferences: string[] // Art categories (renamed from favoriteCategories)
   socials: {
     twitter?: string
     discord?: string
@@ -152,42 +153,62 @@ function AuthContextContent({
         
         if (existingProfile) {
           console.log('AUTH: Loaded existing profile from IPFS')
-          console.log('AUTH: Profile name:', existingProfile.displayName || existingProfile.ensName)
+          console.log('AUTH: Profile name:', existingProfile.name)
+          console.log('AUTH: Display name:', existingProfile.displayName)
           
           setUserProfile({
             address,
-            ensName: user?.email || primaryWallet?.connector?.name || undefined,
-            displayName: existingProfile.displayName || existingProfile.ensName || `User ${address.slice(0, 6)}`,
+            name: existingProfile.name,
+            displayName: existingProfile.displayName || existingProfile.name,
             avatar: existingProfile.avatar,
             banner: existingProfile.banner,
             bio: existingProfile.bio,
-            favoriteCategories: existingProfile.favoriteCategories || [],
+            preferences: existingProfile.preferences || [],
             socials: existingProfile.socials || {},
             isProfileComplete: existingProfile.isProfileComplete || false,
             walletStats: walletStats || undefined
           })
         } else {
-          console.log('AUTH: No existing profile found, creating default profile')
+          console.log('AUTH: No existing profile found, creating new profile with progressive username')
           
-          // Create a default profile
-          const defaultProfile: UserProfile = {
-            address,
-            ensName: user?.email || primaryWallet?.connector?.name || undefined,
-            displayName: user?.email || primaryWallet?.connector?.name || `Creator ${address.slice(0, 6)}`,
-            favoriteCategories: [],
-            socials: {},
-            isProfileComplete: false,
-            walletStats: walletStats || undefined
-          }
-          
-          setUserProfile(defaultProfile)
-          
-          // Save the default profile to IPFS for future use
+          // Create profile using the updateUserProfile function which will generate progressive username
           try {
-            await updateUserProfile(address, defaultProfile)
-            console.log('AUTH: Default profile saved to IPFS')
+            await updateUserProfile(address, {
+              displayName: user?.email || primaryWallet?.connector?.name || undefined,
+              preferences: [],
+              socials: {},
+              isProfileComplete: false
+            })
+            
+            // Load the newly created profile
+            const newProfile = await loadUserProfile(address)
+            if (newProfile) {
+              setUserProfile({
+                address,
+                name: newProfile.name,
+                displayName: newProfile.displayName || newProfile.name,
+                avatar: newProfile.avatar,
+                banner: newProfile.banner,
+                bio: newProfile.bio,
+                preferences: newProfile.preferences || [],
+                socials: newProfile.socials || {},
+                isProfileComplete: newProfile.isProfileComplete || false,
+                walletStats: walletStats || undefined
+              })
+              console.log('AUTH: New profile created with username:', newProfile.name)
+            }
           } catch (error) {
-            console.warn('AUTH: Failed to save default profile to IPFS:', error)
+            console.error('AUTH: Failed to create new profile:', error)
+            // Fallback to basic profile without persistence
+            setUserProfile({
+              address,
+              name: `haus_temp_${address.slice(0, 6)}`,
+              displayName: `User ${address.slice(0, 6)}`,
+              preferences: [],
+              socials: {},
+              isProfileComplete: false,
+              walletStats: walletStats || undefined
+            })
           }
         }
 
@@ -197,9 +218,9 @@ function AuthContextContent({
         // Fallback to basic profile
         setUserProfile({
           address,
-          ensName: user?.email || primaryWallet?.connector?.name || undefined,
+          name: `haus_temp_${address.slice(0, 6)}`,
           displayName: user?.email || primaryWallet?.connector?.name || `Creator ${address.slice(0, 6)}`,
-          favoriteCategories: [],
+          preferences: [],
           socials: {},
           isProfileComplete: false,
           walletStats: walletStats || undefined
@@ -265,23 +286,19 @@ function AuthContextContent({
     try {
       setIsLoading(true)
 
-      // Prepare profile data for IPFS storage
-      const profileDataForIPFS = {
-        address: address.toLowerCase(),
-        ensName: profileUpdates.ensName ?? userProfile.ensName,
+      // Prepare profile data for Pinata IPFS storage
+      const profileUpdatesForIPFS = {
         displayName: profileUpdates.displayName ?? userProfile.displayName,
         bio: profileUpdates.bio ?? userProfile.bio,
         avatar: profileUpdates.avatar ?? userProfile.avatar,
         banner: profileUpdates.banner ?? userProfile.banner,
-        favoriteCategories: profileUpdates.favoriteCategories ?? userProfile.favoriteCategories,
+        preferences: profileUpdates.preferences ?? userProfile.preferences,
         socials: { ...userProfile.socials, ...profileUpdates.socials },
         isProfileComplete: profileUpdates.isProfileComplete ?? userProfile.isProfileComplete,
-        createdAt: userProfile.createdAt || Date.now(),
-        updatedAt: Date.now(),
       }
 
-      // Save to localStorage
-      await updateUserProfile(address, profileDataForIPFS)
+      // Save to Pinata IPFS
+      await updateUserProfile(address, profileUpdatesForIPFS)
 
       // Update local state
       const updatedProfile = { ...userProfile, ...profileUpdates }
@@ -303,31 +320,35 @@ function AuthContextContent({
   }
 
   const uploadAvatar = async (file: File): Promise<string> => {
-    if (!address) {
-      throw new Error("No wallet address available")
+    if (!address || !userProfile?.name) {
+      throw new Error("No wallet address or username available")
     }
 
     try {
-      const imageUrl = await uploadProfileImage(file, "avatar", address)
+      console.log('AUTH: Uploading avatar for user:', userProfile.name)
+      const imageUrl = await uploadProfileImage(file, "avatar", userProfile.name)
       await updateProfile({ avatar: imageUrl })
+      console.log('AUTH: Avatar uploaded and profile updated:', imageUrl)
       return imageUrl
     } catch (error) {
-      console.error("Failed to upload avatar:", error)
+      console.error("AUTH: Failed to upload avatar:", error)
       throw error
     }
   }
 
   const uploadBanner = async (file: File): Promise<string> => {
-    if (!address) {
-      throw new Error("No wallet address available")
+    if (!address || !userProfile?.name) {
+      throw new Error("No wallet address or username available")
     }
 
     try {
-      const imageUrl = await uploadProfileImage(file, "banner", address)
+      console.log('AUTH: Uploading banner for user:', userProfile.name)
+      const imageUrl = await uploadProfileImage(file, "banner", userProfile.name)
       await updateProfile({ banner: imageUrl })
+      console.log('AUTH: Banner uploaded and profile updated:', imageUrl)
       return imageUrl
     } catch (error) {
-      console.error("Failed to upload banner:", error)
+      console.error("AUTH: Failed to upload banner:", error)
       throw error
     }
   }

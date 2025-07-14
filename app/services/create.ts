@@ -2,6 +2,7 @@
 
 import { createPublicClient, createWalletClient, custom, formatEther, parseEther } from 'viem'
 import { seiTestnet, dateToUnixTimestamp, waitForTransaction } from '../lib/sei'
+import { getPinataService } from './pinata'
 
 // Contract addresses from environment variables
 const CONTRACT_ADDRESSES = {
@@ -22,6 +23,7 @@ const CREATION_WRAPPER_ABI = [
       {"name": "eventDuration", "type": "uint256", "internalType": "uint256"},
       {"name": "reservePrice", "type": "uint256", "internalType": "uint256"},
       {"name": "metadataURI", "type": "string", "internalType": "string"},
+      {"name": "artCategory", "type": "string", "internalType": "string"},
       {"name": "ticketsAmount", "type": "uint256", "internalType": "uint256"},
       {"name": "ticketPrice", "type": "uint256", "internalType": "uint256"},
       {"name": "delegatee", "type": "address", "internalType": "address"}
@@ -55,6 +57,7 @@ const EVENT_FACTORY_ABI = [
           {"name": "eventDuration", "type": "uint256", "internalType": "uint256"},
           {"name": "reservePrice", "type": "uint256", "internalType": "uint256"},
           {"name": "metadataURI", "type": "string", "internalType": "string"},
+          {"name": "artCategory", "type": "string", "internalType": "string"},
           {"name": "ticketFactoryAddress", "type": "address", "internalType": "address"},
           {"name": "finalized", "type": "bool", "internalType": "bool"}
         ]
@@ -71,6 +74,7 @@ const EVENT_FACTORY_ABI = [
       {"name": "startDate", "type": "uint256", "indexed": false, "internalType": "uint256"},
       {"name": "reservePrice", "type": "uint256", "indexed": false, "internalType": "uint256"},
       {"name": "metadataURI", "type": "string", "indexed": false, "internalType": "string"},
+      {"name": "artCategory", "type": "string", "indexed": false, "internalType": "string"},
       {"name": "ticketFactoryAddress", "type": "address", "indexed": false, "internalType": "address"}
     ],
     "anonymous": false
@@ -112,6 +116,7 @@ export interface ContractEventData {
   eventDuration: number
   reservePrice: string
   metadataURI: string
+  artCategory: string
   ticketFactoryAddress: string
   txHash: string
 }
@@ -148,41 +153,60 @@ export class EventFactoryService {
   }
 
   /**
-   * Generate placeholder banner image URL
+   * Upload banner image to Pinata IPFS
    */
   async uploadBannerImage(file: File): Promise<string> {
-    console.log('IMAGE_UPLOAD: Generating placeholder banner image')
+    console.log('IMAGE_UPLOAD: Uploading banner image to Pinata IPFS')
     console.log('IMAGE_UPLOAD: File size:', file.size, 'bytes')
     console.log('IMAGE_UPLOAD: File type:', file.type)
     
-    // Return a placeholder image URL based on file hash for consistency
-    const seed = Array.from(new Uint8Array(await file.arrayBuffer()))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('')
-      .slice(0, 16)
-    
-    const placeholderUrl = `https://api.dicebear.com/7.x/shapes/svg?seed=${seed}&size=800`
-    console.log('IMAGE_UPLOAD: Placeholder URL generated:', placeholderUrl)
-    
-    return placeholderUrl
+    try {
+      const pinataService = getPinataService()
+      const imageUrl = await pinataService.uploadImage(file, {
+        name: `RTA-Banner-${Date.now()}`,
+        keyvalues: {
+          category: 'event-banner',
+          uploadType: 'event-creation'
+        }
+      })
+      
+      console.log('IMAGE_UPLOAD: Banner image uploaded successfully:', imageUrl)
+      return imageUrl
+      
+    } catch (error) {
+      console.error('IMAGE_UPLOAD: Failed to upload banner image:', error)
+      throw new Error(`Failed to upload banner image: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
   }
 
   /**
-   * Generate mock metadata URI
+   * Upload event metadata JSON to Pinata IPFS
    */
   async uploadMetadata(metadata: EventMetadata): Promise<string> {
-    console.log('METADATA_UPLOAD: Generating mock metadata URI')
+    console.log('METADATA_UPLOAD: Uploading metadata JSON to Pinata IPFS')
     console.log('METADATA_UPLOAD: Metadata name:', metadata.name)
     console.log('METADATA_UPLOAD: Metadata category:', metadata.category)
     console.log('METADATA_UPLOAD: Metadata attributes count:', metadata.attributes.length)
     
-    // Generate a mock IPFS URI for consistency
-    const mockHash = btoa(JSON.stringify(metadata)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 46)
-    const mockUri = `ipfs://${mockHash}`
-    
-    console.log('METADATA_UPLOAD: Mock URI generated:', mockUri)
-    
-    return mockUri
+    try {
+      const pinataService = getPinataService()
+      const metadataUri = await pinataService.uploadJSON(metadata, {
+        name: `RTA-Event-Metadata-${metadata.name.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}`,
+        keyvalues: {
+          category: metadata.category,
+          eventName: metadata.name,
+          duration: metadata.duration.toString(),
+          uploadType: 'event-metadata'
+        }
+      })
+      
+      console.log('METADATA_UPLOAD: Metadata uploaded successfully:', metadataUri)
+      return metadataUri
+      
+    } catch (error) {
+      console.error('METADATA_UPLOAD: Failed to upload metadata:', error)
+      throw new Error(`Failed to upload metadata: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
   }
 
   /**
@@ -265,8 +289,8 @@ export class EventFactoryService {
       
       // Step 5: Get current events count to predict the new event ID
       const currentEventId = await this.publicClient.readContract({
-        address: CONTRACT_ADDRESSES.CreationWrapper as `0x${string}`,
-        abi: CREATION_WRAPPER_ABI,
+        address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
+        abi: EVENT_FACTORY_ABI,
         functionName: 'totalEvents'
       })
       
@@ -290,6 +314,7 @@ export class EventFactoryService {
           BigInt(formData.duration),
           reservePriceWei,
           metadataURI,
+          formData.category,
           BigInt(ticketsAmount),
           ticketPriceWei,
           userAddress as `0x${string}` // Use user address instead of delegatee
@@ -409,6 +434,7 @@ export class EventFactoryService {
         eventDuration: Number(eventData.eventDuration),
         reservePrice: formatEther(eventData.reservePrice),
         metadataURI: eventData.metadataURI,
+        artCategory: eventData.artCategory,
         ticketFactoryAddress: eventData.ticketFactoryAddress,
         txHash
       }
