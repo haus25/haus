@@ -32,6 +32,7 @@ import {
   User,
   Loader2,
   RefreshCw,
+  Video,
 } from "lucide-react"
 import { QuickAccess } from "../components/quickAccess"
 import { Breadcrumbs } from "../components/breadcrumbs"
@@ -60,7 +61,7 @@ export default function Profile() {
   
   // Initialize profile data from auth context
   const [profileData, setProfileData] = useState({
-    displayName: userProfile?.displayName || userProfile?.ensName || "",
+    displayName: userProfile?.displayName || userProfile?.name || "",
     bio: userProfile?.bio || "",
     avatar: userProfile?.avatar || "",
     banner: userProfile?.banner || "",
@@ -68,7 +69,7 @@ export default function Profile() {
   })
   
   const [selectedCategories, setSelectedCategories] = useState<string[]>(
-    userProfile?.favoriteCategories || []
+    userProfile?.preferences || []
   )
   const [activeTab, setActiveTab] = useState("events")
 
@@ -90,13 +91,13 @@ export default function Profile() {
   useEffect(() => {
     if (userProfile) {
       setProfileData({
-        displayName: userProfile.displayName || userProfile.ensName || "",
+        displayName: userProfile.displayName || userProfile.name || "",
         bio: userProfile.bio || "",
         avatar: userProfile.avatar || "",
         banner: userProfile.banner || "",
         socials: userProfile.socials || {},
       })
-      setSelectedCategories(userProfile.favoriteCategories || [])
+      setSelectedCategories(userProfile.preferences || [])
     }
   }, [userProfile])
 
@@ -172,7 +173,7 @@ export default function Profile() {
         displayName: profileData.displayName,
         bio: profileData.bio,
         socials: profileData.socials,
-        favoriteCategories: selectedCategories,
+        preferences: selectedCategories,
         isProfileComplete: true,
       })
       
@@ -207,7 +208,7 @@ export default function Profile() {
   const handleSaveCategories = async () => {
     try {
       await updateProfile({
-        favoriteCategories: selectedCategories,
+        preferences: selectedCategories,
         isProfileComplete: true,
       })
       toast.success("Preferences saved!")
@@ -350,7 +351,7 @@ export default function Profile() {
           </div>
           <div className="mt-20 ml-8">
             <h1 className="text-3xl font-bold">
-              {profileData.displayName || userProfile.ensName || "Anonymous User"}
+              {profileData.displayName || userProfile.name || "Anonymous User"}
             </h1>
             <p className="text-muted-foreground">{userProfile.address}</p>
             {walletStats && (
@@ -609,12 +610,70 @@ export default function Profile() {
                   <CardContent>
                     {userEvents && userEvents.length > 0 ? (
                       <div className="grid gap-4">
-                        {userEvents.map((event) => (
-                          <div key={event.id} className="border rounded-lg p-4">
-                            <h3 className="font-medium">{event.title}</h3>
-                            <p className="text-sm text-muted-foreground">{event.description}</p>
-                          </div>
-                        ))}
+                        {userEvents.map((event) => {
+                          const eventDate = new Date(event.date)
+                          const now = new Date()
+                          const isLive = now >= eventDate && now <= new Date(eventDate.getTime() + event.duration * 60 * 1000)
+                          const isUpcoming = eventDate > now
+                          
+                          return (
+                            <div key={event.id} className="border rounded-lg p-4">
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <h3 className="font-medium">{event.title}</h3>
+                                    {isLive && (
+                                      <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">
+                                        LIVE
+                                      </span>
+                                    )}
+                                    {isUpcoming && (
+                                      <span className="bg-blue-500 text-white text-xs px-2 py-1 rounded-full">
+                                        UPCOMING
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-sm text-muted-foreground mb-2">{event.description}</p>
+                                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                    <span className="flex items-center">
+                                      <Calendar className="h-3 w-3 mr-1" />
+                                      {eventDate.toLocaleDateString()}
+                                    </span>
+                                    <span className="flex items-center">
+                                      <Clock className="h-3 w-3 mr-1" />
+                                      {event.duration}m
+                                    </span>
+                                    <span className="flex items-center">
+                                      <Users className="h-3 w-3 mr-1" />
+                                      {event.participants}/{event.maxParticipants}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                  {isLive && (
+                                    <Button
+                                      size="sm"
+                                      className="bg-red-600 hover:bg-red-700"
+                                      onClick={() => router.push(`/event-room?eventId=${(event as any).contractEventId || event.id}&isCreator=true`)}
+                                    >
+                                      <Video className="h-4 w-4 mr-2" />
+                                      Join & Stream
+                                    </Button>
+                                  )}
+                                  {isUpcoming && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => router.push(`/event-market/${event.id}`)}
+                                    >
+                                      View Event
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
                     ) : (
                       <div className="text-center py-8">

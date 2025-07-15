@@ -1,179 +1,360 @@
-import { uploadVideoChunk, updateVideoManifest, type VideoManifest, type VideoChunk } from "../utils/video-storage"
-import { updateEventContent } from "./event"
+export interface StreamConfig {
+  eventId: string;
+  isCreator: boolean;
+  userId: string;
+  eventStartTime: string;
+  eventDuration: number; // in minutes
+}
 
-// Define the chunk duration (in seconds)
-const CHUNK_DURATION = 5
+export interface StreamSession {
+  streamUrl: string;
+  playUrl: string;
+  whipUrl: string;
+  whepUrl: string;
+  sessionId: string;
+}
 
-export class StreamingSession {
-  private eventId: string
-  private manifest: VideoManifest
-  private mediaRecorder: MediaRecorder | null = null
-  private stream: MediaStream | null = null
-  private chunkIndex = 0
-  private isStreaming = false
-  private manifestUpdateInterval: NodeJS.Timeout | null = null
-  private onStatusChange: (status: "initializing" | "live" | "error" | "completed") => void
+class StreamingService {
+  private srsBaseUrl: string;
+  private eventRoomUrl: string;
+  private currentStream: MediaStream | null = null;
+  private peerConnection: RTCPeerConnection | null = null;
+  private videoElement: HTMLVideoElement | null = null;
 
-  constructor(
-    eventId: string,
-    title: string,
-    artist: string,
-    onStatusChange: (status: "initializing" | "live" | "error" | "completed") => void,
-  ) {
-    this.eventId = eventId
-    this.onStatusChange = onStatusChange
-
-    // Initialize manifest
-    this.manifest = {
-      eventId,
-      title,
-      artist,
-      chunks: [],
-      status: "live",
-      startedAt: Date.now(),
-      updatedAt: Date.now(),
-    }
+  constructor() {
+    // Use DNS-configured domain for SRS server
+    this.srsBaseUrl = 'room.haus25.live';
+    this.eventRoomUrl = 'https://room.haus25.live';
   }
 
   /**
-   * Start streaming from the user's camera and microphone
+   * Generate stream URLs for an event
    */
-  async startStreaming(): Promise<void> {
+  generateStreamUrls(eventId: string): StreamSession {
+    const sessionId = `event_${eventId}_${Date.now()}`;
+    const streamKey = `live/${eventId}`;
+    
+    return {
+      streamUrl: `rtmp://${this.srsBaseUrl}:1935/live/${eventId}`,
+      playUrl: `https://${this.srsBaseUrl}:8080/live/${eventId}.flv`,
+      whipUrl: `https://${this.srsBaseUrl}:1985/rtc/v1/whip/?app=live&stream=${eventId}`,
+      whepUrl: `https://${this.srsBaseUrl}:1985/rtc/v1/whep/?app=live&stream=${eventId}`,
+      sessionId
+    };
+  }
+
+  /**
+   * Start publishing stream (Creator mode)
+   */
+  async startPublishing(eventId: string, constraints?: MediaStreamConstraints): Promise<StreamSession> {
     try {
-      this.onStatusChange("initializing")
+      console.log('STREAMING: Starting publishing for event', eventId);
 
       // Get user media
-      this.stream = await navigator.mediaDevices.getUserMedia({
+      const defaultConstraints: MediaStreamConstraints = {
         video: {
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { ideal: 30 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 }
         },
-        audio: true,
-      })
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: { ideal: 48000 }
+        }
+      };
 
-      // Create media recorder
-      const options = { mimeType: "video/webm; codecs=vp9,opus" }
-      this.mediaRecorder = new MediaRecorder(this.stream, options)
+      this.currentStream = await navigator.mediaDevices.getUserMedia(
+        constraints || defaultConstraints
+      );
 
-      // Set up event handlers
-      this.mediaRecorder.ondataavailable = this.handleDataAvailable.bind(this)
+      console.log('STREAMING: Got user media stream');
 
-      // Start recording in chunks
-      this.mediaRecorder.start(CHUNK_DURATION * 1000)
-      this.isStreaming = true
+      // Generate stream URLs
+      const streamSession = this.generateStreamUrls(eventId);
+      
+      // Set up WebRTC connection
+      const config: RTCConfiguration = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      };
 
-      // Start periodic manifest updates
-      this.manifestUpdateInterval = setInterval(
-        this.updateManifestOnChain.bind(this),
-        30000, // Update every 30 seconds
-      )
+      this.peerConnection = new RTCPeerConnection(config);
 
-      this.onStatusChange("live")
+      // Add stream tracks to peer connection
+      this.currentStream.getTracks().forEach(track => {
+        if (this.peerConnection && this.currentStream) {
+          this.peerConnection.addTrack(track, this.currentStream);
+        }
+      });
+
+      // Handle ICE candidates
+      this.peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log('STREAMING: ICE candidate:', event.candidate);
+        }
+      };
+
+      // Create offer and set local description
+      const offer = await this.peerConnection.createOffer();
+      await this.peerConnection.setLocalDescription(offer);
+
+      console.log('STREAMING: Created offer:', offer);
+
+      // Send offer to SRS via WHIP
+      await this.sendOfferToSRS(streamSession.whipUrl, offer);
+
+      console.log('STREAMING: Successfully started publishing');
+      return streamSession;
+
     } catch (error) {
-      console.error("Error starting stream:", error)
-      this.onStatusChange("error")
-      throw new Error("Failed to start streaming")
+      console.error('STREAMING: Error starting publishing:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to start publishing: ${errorMessage}`);
     }
   }
 
   /**
-   * Stop the streaming session
+   * Start playing stream (Viewer mode)
    */
-  async stopStreaming(): Promise<string> {
-    if (!this.isStreaming) return ""
-
-    // Stop recording
-    if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
-      this.mediaRecorder.stop()
-    }
-
-    // Stop all tracks in the stream
-    if (this.stream) {
-      this.stream.getTracks().forEach((track) => track.stop())
-    }
-
-    // Clear interval
-    if (this.manifestUpdateInterval) {
-      clearInterval(this.manifestUpdateInterval)
-    }
-
-    // Update manifest status
-    this.manifest.status = "completed"
-    this.manifest.updatedAt = Date.now()
-
-    // Final manifest update
-    const finalManifestCid = await this.updateManifestOnChain()
-
-    this.isStreaming = false
-    this.onStatusChange("completed")
-
-    return finalManifestCid
-  }
-
-  /**
-   * Handle data available event from MediaRecorder
-   */
-  private async handleDataAvailable(event: BlobEvent): Promise<void> {
-    if (event.data && event.data.size > 0) {
-      try {
-        // Convert to MP4 format (in a production app, you'd use a proper transcoding service)
-        const chunk = event.data
-
-        // Upload chunk to IPFS
-        const chunkCid = await uploadVideoChunk(chunk, this.eventId, this.chunkIndex)
-
-        // Add to manifest
-        const videoChunk: VideoChunk = {
-          index: this.chunkIndex,
-          cid: chunkCid,
-          duration: CHUNK_DURATION,
-          startTime: Date.now() - CHUNK_DURATION * 1000,
-        }
-
-        this.manifest.chunks.push(videoChunk)
-        this.manifest.updatedAt = Date.now()
-        this.chunkIndex++
-
-        // If we have accumulated several chunks, update the manifest on-chain
-        if (this.chunkIndex % 3 === 0) {
-          await this.updateManifestOnChain()
-        }
-      } catch (error) {
-        console.error("Error processing video chunk:", error)
-      }
-    }
-  }
-
-  /**
-   * Update the manifest on IPFS and update the event content on-chain
-   */
-  private async updateManifestOnChain(): Promise<string> {
+  async startPlaying(eventId: string, videoElement: HTMLVideoElement): Promise<StreamSession> {
     try {
-      // Upload updated manifest to IPFS
-      const manifestCid = await updateVideoManifest(this.eventId, this.manifest)
+      console.log('STREAMING: Starting playback for event', eventId);
+      
+      this.videoElement = videoElement;
+      
+      // Generate stream URLs
+      const streamSession = this.generateStreamUrls(eventId);
+      
+      // Set up WebRTC connection for receiving
+      const config: RTCConfiguration = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      };
 
-      // Update the event content on-chain with the new manifest CID
-      await updateEventContent(this.eventId, manifestCid)
+      this.peerConnection = new RTCPeerConnection(config);
 
-      return manifestCid
+      // Handle incoming stream
+      this.peerConnection.ontrack = (event) => {
+        console.log('STREAMING: Received remote track');
+        if (this.videoElement && event.streams[0]) {
+          this.videoElement.srcObject = event.streams[0];
+        }
+      };
+
+      // Handle ICE candidates
+      this.peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log('STREAMING: ICE candidate:', event.candidate);
+        }
+      };
+
+      // Create offer for receiving stream
+      const offer = await this.peerConnection.createOffer();
+      await this.peerConnection.setLocalDescription(offer);
+
+      // Send offer to SRS via WHEP
+      await this.sendOfferToSRS(streamSession.whepUrl, offer);
+
+      console.log('STREAMING: Successfully started playing');
+      return streamSession;
+
     } catch (error) {
-      console.error("Error updating manifest on-chain:", error)
-      throw new Error("Failed to update manifest on-chain")
+      console.error('STREAMING: Error starting playback:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to start playback: ${errorMessage}`);
     }
   }
 
   /**
-   * Get the video element for preview
+   * Send offer to SRS server via WHIP/WHEP
    */
-  getPreviewElement(): HTMLVideoElement | null {
-    if (!this.stream) return null
+  private async sendOfferToSRS(url: string, offer: RTCSessionDescriptionInit): Promise<void> {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/sdp',
+          'Accept': 'application/sdp'
+        },
+        body: offer.sdp
+      });
 
-    const videoElement = document.createElement("video")
-    videoElement.srcObject = this.stream
-    videoElement.autoplay = true
-    videoElement.muted = true // Mute to prevent feedback
+      if (!response.ok) {
+        throw new Error(`SRS server responded with status: ${response.status}`);
+      }
 
-    return videoElement
+      const answerSdp = await response.text();
+      const answer: RTCSessionDescriptionInit = {
+        type: 'answer',
+        sdp: answerSdp
+      };
+
+      if (this.peerConnection) {
+        await this.peerConnection.setRemoteDescription(answer);
+      }
+
+      console.log('STREAMING: Successfully exchanged SDP with SRS');
+
+    } catch (error) {
+      console.error('STREAMING: Error sending offer to SRS:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Stop streaming
+   */
+  async stopStreaming(): Promise<void> {
+    try {
+      console.log('STREAMING: Stopping stream');
+
+      // Stop all tracks
+      if (this.currentStream) {
+        this.currentStream.getTracks().forEach(track => {
+          track.stop();
+        });
+        this.currentStream = null;
+      }
+
+      // Close peer connection
+      if (this.peerConnection) {
+        this.peerConnection.close();
+        this.peerConnection = null;
+      }
+
+      // Clear video element
+      if (this.videoElement) {
+        this.videoElement.srcObject = null;
+        this.videoElement = null;
+      }
+
+      console.log('STREAMING: Stream stopped successfully');
+
+    } catch (error) {
+      console.error('STREAMING: Error stopping stream:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Toggle video track
+   */
+  toggleVideo(enabled: boolean): void {
+    if (this.currentStream) {
+      const videoTracks = this.currentStream.getVideoTracks();
+      videoTracks.forEach(track => {
+        track.enabled = enabled;
+      });
+    }
+  }
+
+  /**
+   * Toggle audio track
+   */
+  toggleAudio(enabled: boolean): void {
+    if (this.currentStream) {
+      const audioTracks = this.currentStream.getAudioTracks();
+      audioTracks.forEach(track => {
+        track.enabled = enabled;
+      });
+    }
+  }
+
+  /**
+   * Get current stream status
+   */
+  getStreamStatus(): {
+    isPublishing: boolean;
+    isPlaying: boolean;
+    hasVideo: boolean;
+    hasAudio: boolean;
+  } {
+    const hasStream = !!this.currentStream;
+    const hasConnection = !!this.peerConnection;
+
+    return {
+      isPublishing: hasStream && hasConnection,
+      isPlaying: hasConnection && !!this.videoElement,
+      hasVideo: hasStream && this.currentStream ? this.currentStream.getVideoTracks().length > 0 : false,
+      hasAudio: hasStream && this.currentStream ? this.currentStream.getAudioTracks().length > 0 : false
+    };
+  }
+
+  /**
+   * Check if stream is live
+   */
+  async checkStreamStatus(eventId: string): Promise<boolean> {
+    try {
+      const response = await fetch(`https://${this.srsBaseUrl}:1985/api/v1/streams/`);
+      const data = await response.json();
+      
+      // Check if stream exists for this event
+      const streamExists = data.streams?.some((stream: any) => 
+        stream.app === 'live' && stream.stream === eventId
+      );
+
+      return streamExists || false;
+
+    } catch (error) {
+      console.error('STREAMING: Error checking stream status:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Reserve stream URL for event (called during event creation)
+   * Now simply generates URLs since event data is stored on blockchain
+   */
+  async reserveStreamUrl(eventId: string, startTime: string, duration: number): Promise<{
+    reserved: boolean;
+    streamUrls: StreamSession;
+    eventRoomUrl: string;
+  }> {
+    try {
+      console.log('STREAMING: Generating stream URLs for event', eventId);
+
+      // Generate stream URLs
+      const streamUrls = this.generateStreamUrls(eventId);
+      
+      // Create event room URL
+      const eventRoomUrl = `${this.eventRoomUrl}/${eventId}`;
+
+      console.log('STREAMING: Stream URLs generated successfully');
+
+      return {
+        reserved: true,
+        streamUrls,
+        eventRoomUrl
+      };
+
+    } catch (error) {
+      console.error('STREAMING: Error generating stream URLs:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get stream information for an event
+   * Generates URLs dynamically since no reservation storage needed
+   */
+  getReservedStream(eventId: string): {
+    streamUrls: StreamSession;
+    eventRoomUrl: string;
+  } {
+    return {
+      streamUrls: this.generateStreamUrls(eventId),
+      eventRoomUrl: `${this.eventRoomUrl}/${eventId}`
+    };
   }
 }
+
+// Create singleton instance
+export const streamingService = new StreamingService();
+
+// Helper function to create streaming service
+export const createStreamingService = () => streamingService;

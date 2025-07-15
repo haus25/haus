@@ -23,6 +23,7 @@ import { QuickAccess } from "../components/quickAccess"
 import { useAuth } from "../contexts/auth"
 import { useEvents } from "../contexts/events"
 import { createEventFactoryService, type EventFormData } from "../services/create"
+import { streamingService } from "../services/streaming"
 
 
 type Step = "category" | "details" | "format" | "sales" | "mint"
@@ -202,7 +203,27 @@ export default function EventFactory() {
       console.log("EVENT_CREATION: TicketFactory address:", contractEventData.ticketFactoryAddress)
       console.log("EVENT_CREATION: Metadata URI:", contractEventData.metadataURI)
 
-      // Step 4: Update local state
+      // Step 4: Reserve streaming URL
+      updateCreationProgress("Reserving streaming URL")
+      console.log("EVENT_CREATION: Reserving streaming URL for live event")
+      
+      const eventDate = formData.date ? 
+        new Date(
+          formData.date.setHours(
+            Number.parseInt(formData.time.split(":")[0]),
+            Number.parseInt(formData.time.split(":")[1]),
+          ),
+        ) : new Date()
+
+      const streamReservation = await streamingService.reserveStreamUrl(
+        contractEventData.eventId.toString(),
+        eventDate.toISOString(),
+        formData.duration
+      )
+
+      console.log("EVENT_CREATION: Stream URL reserved:", streamReservation.eventRoomUrl)
+
+      // Step 5: Update local state
       updateCreationProgress("Updating application state")
       console.log("EVENT_CREATION: Creating local event object for state management")
       
@@ -239,7 +260,7 @@ export default function EventFactory() {
       const localEvent = {
         id: contractEventData.eventId.toString(),
         title: formData.title,
-        creator: userProfile?.ensName || userProfile.address,
+        creator: userProfile?.displayName || userProfile?.name || userProfile.address,
         creatorAddress: userProfile.address,
         category: formData.category,
         date: formData.date
@@ -266,10 +287,10 @@ export default function EventFactory() {
       addEvent(localEvent)
       console.log("EVENT_CREATION: Event added to global application state")
 
-      // Step 5: Complete
+      // Step 6: Complete
       setCreationProgress({
         currentStep: "Complete",
-        completedSteps: ["Initializing", "Preparing event data", "Executing blockchain transaction", "Updating application state"],
+        completedSteps: ["Initializing", "Preparing event data", "Executing blockchain transaction", "Reserving streaming URL", "Updating application state"],
         txHash: contractEventData.txHash,
         eventId: contractEventData.eventId,
         ticketFactoryAddress: contractEventData.ticketFactoryAddress,
@@ -723,6 +744,7 @@ export default function EventFactory() {
                           "Initializing service connection",
                           "Preparing event data", 
                           "Executing blockchain transaction",
+                          "Reserving streaming URL",
                           "Updating application state"
                         ].map((stepName, index) => {
                           const isCompleted = creationProgress.completedSteps.includes(stepName)

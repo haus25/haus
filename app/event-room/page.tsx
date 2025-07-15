@@ -19,6 +19,7 @@ import { useAuth } from "../contexts/auth"
 import { EventVideoPlayer } from "../components/videoPlayer"
 import { TicketVerification } from "../components/ticketVerification"
 import { EventChat } from "../components/eventChat"
+import { WebRTCStreaming } from "../components/webrtcStreaming"
 import { getRandomVideo } from "../lib/constants"
 
 export default function EventRoom() {
@@ -89,7 +90,7 @@ export default function EventRoom() {
     { id: 1, name: "artist.eth", avatar: "/placeholder.svg?height=40&width=40", isPerformer: true },
     {
       id: 2,
-      name: userProfile?.ensName || "jabyl.eth",
+      name: userProfile?.displayName || userProfile?.name || "jabyl.eth",
       avatar:
         userProfile?.avatar ||
         "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/21c09ec3-fb44-40b5-9ffc-6fedc032fe3b-I36E2znZKmldANSRQFL5kgjSSjYRka.jpeg",
@@ -198,7 +199,7 @@ export default function EventRoom() {
         ...chatMessages,
         {
           id: chatMessages.length + 1,
-          user: userProfile?.ensName || "you.eth",
+          user: userProfile?.displayName || userProfile?.name || "you.eth",
           message: chatMessage,
           timestamp: new Date().toISOString(),
         },
@@ -215,7 +216,7 @@ export default function EventRoom() {
       {
         id: chatMessages.length + 1,
         user: "system",
-        message: `${userProfile?.ensName || "you.eth"} tipped ${tipAmount} SEI!`,
+        message: `${userProfile?.displayName || userProfile?.name || "you.eth"} tipped ${tipAmount} SEI!`,
         timestamp: new Date().toISOString(),
       },
     ])
