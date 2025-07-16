@@ -2,7 +2,7 @@
 export const CONTRACT_ADDRESSES = {
   EVENT_FACTORY: process.env.NEXT_PUBLIC_EVENT_FACTORY || "",
   EVENT_STATION: process.env.NEXT_PUBLIC_EVENT_STATION || "",
-  TICKET_FACTORY: process.env.NEXT_PUBLIC_TICKET_FACTORY || "",
+  TICKET_KIOSK: process.env.NEXT_PUBLIC_TICKET_KIOSK || "",
   LIVE_TIPPING: process.env.NEXT_PUBLIC_LIVE_TIPPING || "",
   DISTRIBUTOR: process.env.NEXT_PUBLIC_DISTRIBUTOR || "",
 }
@@ -81,67 +81,71 @@ export const IPFS_GATEWAY = process.env.NEXT_PUBLIC_IPFS_GATEWAY || "https://ipf
 export const HIDDEN_MESSAGE_1 = "cmVhbGl0eSAtIGlzIHlldCB0byBiZSBpbnZlbnRlZC4=" // "reality - is yet to be invented." in base64
 export const HIDDEN_MESSAGE_2 = "anVzdCBhbm90aGVyIHF1b3RlLg==" // "just another quote." in base64
 
-// Updated contract ABIs for latest Solidity patterns
+// EventFactory ABI - matches deployed contract
 export const EVENT_FACTORY_ABI = [
   {
-    inputs: [
+    "type": "function",
+    "name": "getEvent",
+    "inputs": [{"name": "eventId", "type": "uint256", "internalType": "uint256"}],
+    "outputs": [
       {
-        internalType: "string",
-        name: "_title",
-        type: "string",
-      },
-      {
-        internalType: "string",
-        name: "_description",
-        type: "string",
-      },
-      {
-        internalType: "uint256",
-        name: "_startTime",
-        type: "uint256",
-      },
-      {
-        internalType: "uint256",
-        name: "_duration",
-        type: "uint256",
-      },
-      {
-        internalType: "uint256",
-        name: "_maxTickets",
-        type: "uint256",
-      },
-      {
-        internalType: "uint256",
-        name: "_ticketPrice",
-        type: "uint256",
-      },
-      {
-        internalType: "string",
-        name: "_metadataURI",
-        type: "string",
-      },
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct IEventFactory.EventData",
+        "components": [
+          {"name": "creator", "type": "address", "internalType": "address"},
+          {"name": "startDate", "type": "uint256", "internalType": "uint256"},
+          {"name": "eventDuration", "type": "uint256", "internalType": "uint256"},
+          {"name": "reservePrice", "type": "uint256", "internalType": "uint256"},
+          {"name": "metadataURI", "type": "string", "internalType": "string"},
+          {"name": "artCategory", "type": "string", "internalType": "string"},
+          {"name": "ticketKioskAddress", "type": "address", "internalType": "address"},
+          {"name": "finalized", "type": "bool", "internalType": "bool"}
+        ]
+      }
     ],
-    name: "createEvent",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
+    "stateMutability": "view"
   },
+  {
+    "type": "function",
+    "name": "totalEvents",
+    "inputs": [],
+    "outputs": [{"name": "", "type": "uint256", "internalType": "uint256"}],
+    "stateMutability": "view"
+  }
 ] as const
 
-export const TICKET_FACTORY_ABI = [
+export const TICKET_KIOSK_ABI = [
   {
-    inputs: [
-      {
-        internalType: "uint256",
-        name: "_eventId",
-        type: "uint256",
-      },
-    ],
-    name: "buyTicket",
-    outputs: [],
-    stateMutability: "payable",
-    type: "function",
+    "type": "function",
+    "name": "purchaseTicket",
+    "inputs": [],
+    "outputs": [{"name": "ticketId", "type": "uint256", "internalType": "uint256"}],
+    "stateMutability": "payable"
   },
+  {
+    "type": "function",
+    "name": "getSalesInfo",
+    "inputs": [],
+    "outputs": [
+      {"name": "totalTickets", "type": "uint256", "internalType": "uint256"},
+      {"name": "soldTickets", "type": "uint256", "internalType": "uint256"},
+      {"name": "remainingTickets", "type": "uint256", "internalType": "uint256"},
+      {"name": "price", "type": "uint256", "internalType": "uint256"},
+      {"name": "artCategory", "type": "string", "internalType": "string"}
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "hasTicketForEvent",
+    "inputs": [
+      {"name": "user", "type": "address", "internalType": "address"},
+      {"name": "_eventId", "type": "uint256", "internalType": "uint256"}
+    ],
+    "outputs": [{"name": "", "type": "bool", "internalType": "bool"}],
+    "stateMutability": "view"
+  }
 ] as const
 
 export const LIVE_TIPPING_ABI = [

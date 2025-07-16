@@ -27,7 +27,7 @@ export default function Home() {
   const [showRtaModal, setShowRtaModal] = useState(false)
   const [showLoginModal, setShowLoginModal] = useState(false)
   const [showWaitlistModal, setShowWaitlistModal] = useState(false)
-  const [currentRedirectPath, setCurrentRedirectPath] = useState("/event-market")
+  const [currentRedirectPath, setCurrentRedirectPath] = useState("/ticket-kiosk")
 
   const handleConnect = (redirectPath?: string) => {
     // If a redirect path is provided, use it
@@ -44,7 +44,7 @@ export default function Home() {
 
   const handleLoginSuccess = () => {
     setShowLoginModal(false)
-    router.push("/event-market")
+    router.push("/ticket-kiosk")
   }
 
   const handleNavigate = (path: string) => {
@@ -88,7 +88,7 @@ export default function Home() {
                   <Button
                     size="lg"
                     className="bg-primary text-primary-foreground hover:bg-primary/90"
-                    onClick={() => handleNavigate("/event-market")}
+                    onClick={() => handleNavigate("/ticket-kiosk")}
                   >
                     DISCOVER EVENTS
                   </Button>

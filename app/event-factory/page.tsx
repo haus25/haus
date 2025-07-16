@@ -51,7 +51,7 @@ export default function EventFactory() {
     completedSteps: string[];
     txHash?: string;
     eventId?: number;
-    ticketFactoryAddress?: string;
+    ticketKioskAddress?: string;
     isComplete: boolean;
   }>({
     currentStep: "",
@@ -190,7 +190,7 @@ export default function EventFactory() {
       console.log("EVENT_CREATION: Calling createEvent on CreationWrapper contract")
       console.log("EVENT_CREATION: This single transaction will:")
       console.log("EVENT_CREATION: 1. Mint RTA NFT")
-      console.log("EVENT_CREATION: 2. Deploy TicketFactory contract")
+      console.log("EVENT_CREATION: 2. Deploy TicketKiosk contract")
       
       const contractEventData = await eventFactoryService.createEvent(
         eventFormData,
@@ -200,7 +200,7 @@ export default function EventFactory() {
       console.log("EVENT_CREATION: Transaction completed successfully")
       console.log("EVENT_CREATION: Transaction hash:", contractEventData.txHash)
       console.log("EVENT_CREATION: Event ID:", contractEventData.eventId)
-      console.log("EVENT_CREATION: TicketFactory address:", contractEventData.ticketFactoryAddress)
+      console.log("EVENT_CREATION: TicketKiosk address:", contractEventData.ticketKioskAddress)
       console.log("EVENT_CREATION: Metadata URI:", contractEventData.metadataURI)
 
       // Step 4: Reserve streaming URL
@@ -279,7 +279,7 @@ export default function EventFactory() {
         image: eventImageUrl, // Use the actual IPFS URL instead of blob URL
         status: "upcoming" as const,
         contractEventId: contractEventData.eventId,
-        ticketFactoryAddress: contractEventData.ticketFactoryAddress,
+        ticketKioskAddress: contractEventData.ticketKioskAddress,
         txHash: contractEventData.txHash,
         metadataURI: contractEventData.metadataURI,
       }
@@ -293,12 +293,12 @@ export default function EventFactory() {
         completedSteps: ["Initializing", "Preparing event data", "Executing blockchain transaction", "Reserving streaming URL", "Updating application state"],
         txHash: contractEventData.txHash,
         eventId: contractEventData.eventId,
-        ticketFactoryAddress: contractEventData.ticketFactoryAddress,
+        ticketKioskAddress: contractEventData.ticketKioskAddress,
         isComplete: true
       })
 
       console.log("EVENT_CREATION: Process completed successfully")
-      console.log("EVENT_CREATION: User can now view their event in the event market")
+      console.log("EVENT_CREATION: User can now view their event in the Ticket Kiosk")
 
     } catch (error: any) {
       console.error("EVENT_CREATION: Error during event creation:", error)
@@ -779,7 +779,7 @@ export default function EventFactory() {
                           <p className="text-sm text-blue-800 font-medium">Single Transaction Process:</p>
                           <ul className="text-xs text-blue-700 mt-2 space-y-1">
                             <li>• Mint RTA NFT</li>
-                            <li>• Deploy TicketFactory contract</li>
+                            <li>• Deploy TicketKiosk contract</li>
                           </ul>
                         </div>
                       )}
@@ -817,8 +817,8 @@ export default function EventFactory() {
                       <h4 className="font-medium text-gray-800 mb-2">Smart Contracts</h4>
                       <div className="space-y-1 text-sm">
                         <div className="flex justify-between">
-                          <span className="text-gray-600">TicketFactory:</span>
-                          <span className="font-mono text-xs">{creationProgress.ticketFactoryAddress?.slice(0, 10)}...</span>
+                          <span className="text-gray-600">TicketKiosk:</span>
+                          <span className="font-mono text-xs">{creationProgress.ticketKioskAddress?.slice(0, 10)}...</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Transaction:</span>
@@ -830,10 +830,10 @@ export default function EventFactory() {
                   
                   <div className="flex flex-col sm:flex-row gap-3 justify-center">
                     <Button
-                      onClick={() => router.push("/event-market")}
+                      onClick={() => router.push("/ticket-kiosk")}
                       className="bg-primary text-primary-foreground hover:bg-primary/90"
                     >
-                      View in Event Market
+                      View in Ticket Kiosk
                     </Button>
                     {creationProgress.txHash && (
                       <Button

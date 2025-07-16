@@ -65,12 +65,12 @@ export const Navbar = memo(function Navbar() {
           Factory
         </Link>
         <Link
-          href="/event-market"
+          href="/ticket-kiosk"
           className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-            pathname.includes("/event-market") ? "bg-primary/10 text-primary" : "hover:bg-secondary"
+            pathname.includes("/ticket-kiosk") ? "bg-primary/10 text-primary" : "hover:bg-secondary"
           }`}
         >
-          Market
+          Kiosk
         </Link>
         <Link
           href="/event-room"

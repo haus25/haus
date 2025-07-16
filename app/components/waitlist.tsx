@@ -122,7 +122,7 @@ export function WaitlistModal({ isOpen, onClose, redirectPath }: WaitlistModalPr
         setHasInviteAccess(true)
         onClose()
 
-        // Redirect to the specified path or default to event-market
+        // Redirect to the specified path or default to ticket-kiosk
         if (redirectPath) {
           router.push(redirectPath)
         }

@@ -8,7 +8,7 @@ import {
 import { 
   CONTRACT_ADDRESSES, 
   EVENT_FACTORY_ABI, 
-  TICKET_FACTORY_ABI 
+  TICKET_KIOSK_ABI 
 } from "../lib/constants"
 
 /**
@@ -64,19 +64,19 @@ export async function fetchEvent(eventId: string): Promise<any> {
  */
 export async function verifyTicket(eventId: string, userAddress: string): Promise<boolean> {
   try {
-    if (!CONTRACT_ADDRESSES.TICKET_FACTORY) {
-      throw new Error('Ticket Factory contract address not configured')
+    if (!CONTRACT_ADDRESSES.TICKET_KIOSK) {
+      throw new Error('Ticket Kiosk contract address not configured')
     }
 
     const provider = createEthersProvider()
-    const ticketFactoryContract = createContract(
-      CONTRACT_ADDRESSES.TICKET_FACTORY,
-      TICKET_FACTORY_ABI,
+    const ticketKioskContract = createContract(
+      CONTRACT_ADDRESSES.TICKET_KIOSK,
+      TICKET_KIOSK_ABI,
       provider
     )
 
     // Check if user has a valid ticket for this event
-    const hasTicket = await ticketFactoryContract.hasValidTicket(eventId, userAddress)
+    const hasTicket = await ticketKioskContract.hasValidTicket(eventId, userAddress)
     return hasTicket
   } catch (error) {
     console.error("Error verifying ticket:", error)
@@ -202,8 +202,8 @@ export async function buyTicket(
   signer: ethers.Signer
 ): Promise<string> {
   try {
-    if (!CONTRACT_ADDRESSES.TICKET_FACTORY) {
-      throw new Error('Ticket Factory contract address not configured')
+    if (!CONTRACT_ADDRESSES.TICKET_KIOSK) {
+      throw new Error('Ticket Kiosk contract address not configured')
     }
 
     // Validate network
@@ -218,15 +218,15 @@ export async function buyTicket(
       throw new Error('Event not found')
     }
 
-    const ticketFactoryContract = createContract(
-      CONTRACT_ADDRESSES.TICKET_FACTORY,
-      TICKET_FACTORY_ABI,
+    const ticketKioskContract = createContract(
+      CONTRACT_ADDRESSES.TICKET_KIOSK,
+      TICKET_KIOSK_ABI,
       signer
     )
 
     // Call buyTicket function with payment
     const ticketPriceWei = ethers.utils.parseEther(eventData.ticketPrice.toString())
-    const tx = await ticketFactoryContract.buyTicket(eventId, {
+    const tx = await ticketKioskContract.buyTicket(eventId, {
       value: ticketPriceWei
     })
     

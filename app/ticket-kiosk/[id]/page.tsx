@@ -63,7 +63,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   }, [params.id])
 
   const handlePurchaseTicket = () => {
-    toast.success("Ticket purchase functionality will be implemented here. This would integrate with the TicketFactory contract to purchase tickets using the event's specific TicketFactory address.")
+    toast.success("Ticket purchase functionality will be implemented here. This would integrate with the TicketKiosk contract to purchase tickets using the event's specific TicketKiosk address.")
   }
 
   const handleFavorite = () => {
@@ -102,9 +102,9 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             <p className="text-muted-foreground mb-6">
               The event you're looking for doesn't exist or has been removed.
             </p>
-            <Button onClick={() => router.push('/event-market')}>
+            <Button onClick={() => router.push('/ticket-kiosk')}>
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Event Market
+              Back to Ticket Kiosk
             </Button>
           </div>
         </main>
@@ -119,7 +119,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
 
       <main className="flex-1 container py-12">
         <Breadcrumbs items={[
-          { label: "Event Market", href: "/event-market" },
+          { label: "", href: "/ticket-kiosk" },
           { label: event.title }
         ]} />
 

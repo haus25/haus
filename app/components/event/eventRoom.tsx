@@ -124,7 +124,7 @@ export default function EventRoom({ eventId }: EventRoomProps) {
         {isConnected && !hasTicket && (
           <button
             className="mt-4 px-4 py-2 bg-primary text-white rounded-md"
-            onClick={() => (window.location.href = `/event-market/${eventId}`)}
+            onClick={() => (window.location.href = `/ticket-kiosk/${eventId}`)}
           >
             Purchase Ticket
           </button>
@@ -140,7 +140,7 @@ export default function EventRoom({ eventId }: EventRoomProps) {
         <p>You need a ticket to access this event</p>
         <button
           className="mt-4 px-4 py-2 bg-primary text-white rounded-md"
-          onClick={() => (window.location.href = `/event-market/${eventId}`)}
+          onClick={() => (window.location.href = `/ticket-kiosk/${eventId}`)}
         >
           Purchase Ticket
         </button>

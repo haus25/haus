@@ -58,7 +58,7 @@ const EVENT_FACTORY_ABI = [
           {"name": "reservePrice", "type": "uint256", "internalType": "uint256"},
           {"name": "metadataURI", "type": "string", "internalType": "string"},
           {"name": "artCategory", "type": "string", "internalType": "string"},
-          {"name": "ticketFactoryAddress", "type": "address", "internalType": "address"},
+          {"name": "ticketKioskAddress", "type": "address", "internalType": "address"},
           {"name": "finalized", "type": "bool", "internalType": "bool"}
         ]
       }
@@ -75,7 +75,7 @@ const EVENT_FACTORY_ABI = [
       {"name": "reservePrice", "type": "uint256", "indexed": false, "internalType": "uint256"},
       {"name": "metadataURI", "type": "string", "indexed": false, "internalType": "string"},
       {"name": "artCategory", "type": "string", "indexed": false, "internalType": "string"},
-      {"name": "ticketFactoryAddress", "type": "address", "indexed": false, "internalType": "address"}
+      {"name": "ticketKioskAddress", "type": "address", "indexed": false, "internalType": "address"}
     ],
     "anonymous": false
   }
@@ -117,7 +117,7 @@ export interface ContractEventData {
   reservePrice: string
   metadataURI: string
   artCategory: string
-  ticketFactoryAddress: string
+  ticketKioskAddress: string
   txHash: string
 }
 
@@ -130,26 +130,34 @@ export class EventFactoryService {
   constructor(provider?: any) {
     console.log('EventFactoryService constructor called with provider:', provider)
     this.provider = provider
-    
-    // Create a public client for reading from the blockchain
-    this.publicClient = createPublicClient({
-      chain: seiTestnet,
-      transport: custom(provider?.transport || (typeof window !== 'undefined' ? window.ethereum : null))
-    })
-    
-    // Use the provider as wallet client if it's already a viem wallet client
-    if (provider && typeof provider.writeContract === 'function') {
-      console.log('Using provided wagmi wallet client')
-      this.walletClient = provider
-    } else if (provider) {
-      console.log('Creating wallet client from custom provider')
-      this.walletClient = createWalletClient({
+    // Don't create clients during construction to avoid SSR issues
+  }
+
+  private getPublicClient() {
+    if (!this.publicClient && typeof window !== 'undefined') {
+      this.publicClient = createPublicClient({
         chain: seiTestnet,
-        transport: custom(provider)
+        transport: custom(this.provider?.transport || window.ethereum || {} as any)
       })
-    } else {
-      console.warn('No provider provided to EventFactoryService')
     }
+    return this.publicClient
+  }
+
+  private getWalletClient() {
+    if (!this.walletClient && this.provider) {
+      // Use the provider as wallet client if it's already a viem wallet client
+      if (typeof this.provider.writeContract === 'function') {
+        console.log('Using provided wagmi wallet client')
+        this.walletClient = this.provider
+      } else {
+        console.log('Creating wallet client from custom provider')
+        this.walletClient = createWalletClient({
+          chain: seiTestnet,
+          transport: custom(this.provider)
+        })
+      }
+    }
+    return this.walletClient
   }
 
   /**
@@ -213,7 +221,7 @@ export class EventFactoryService {
    * Create an event on the blockchain using CreationWrapper
    */
   async createEvent(formData: EventFormData, userAddress: string): Promise<ContractEventData> {
-    if (!this.walletClient) {
+    if (!this.getWalletClient()) {
       throw new Error('Wallet not connected')
     }
 
@@ -288,7 +296,7 @@ export class EventFactoryService {
       console.log('CONTRACT_CALL: User address (creator):', userAddress)
       
       // Step 5: Get current events count to predict the new event ID
-      const currentEventId = await this.publicClient.readContract({
+      const currentEventId = await this.getPublicClient().readContract({
         address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
         abi: EVENT_FACTORY_ABI,
         functionName: 'totalEvents'
@@ -302,10 +310,10 @@ export class EventFactoryService {
       console.log('CONTRACT_CALL: Step 5 - Simulating CreationWrapper transaction')
       console.log('CONTRACT_CALL: This transaction will perform the following operations:')
       console.log('CONTRACT_CALL: 1. Mint RTA NFT with event metadata')
-      console.log('CONTRACT_CALL: 2. Deploy dedicated TicketFactory contract for this event')
+      console.log('CONTRACT_CALL: 2. Deploy dedicated TicketKiosk contract for this event')
       console.log('CONTRACT_CALL: 3. Configure revenue distribution (80% creator, 20% treasury)')
       
-      const { request } = await this.publicClient.simulateContract({
+      const { request } = await this.getPublicClient().simulateContract({
         address: CONTRACT_ADDRESSES.CreationWrapper as `0x${string}`,
         abi: CREATION_WRAPPER_ABI,
         functionName: 'createEventAndDelegate',
@@ -325,14 +333,14 @@ export class EventFactoryService {
       console.log('CONTRACT_CALL: Simulation successful, executing transaction')
       console.log('CONTRACT_CALL: Gas estimate:', request.gas?.toString())
       
-      const txHash = await this.walletClient.writeContract(request)
+      const txHash = await this.getWalletClient().writeContract(request)
       console.log('CONTRACT_CALL: Transaction submitted with hash:', txHash)
 
       // Step 7: Wait for transaction confirmation
       console.log('CONTRACT_CALL: Step 6 - Waiting for transaction confirmation')
       console.log('CONTRACT_CALL: Monitoring blockchain for transaction receipt...')
       
-      const receipt = await waitForTransaction(this.publicClient, txHash)
+      const receipt = await waitForTransaction(this.getPublicClient(), txHash)
       console.log('CONTRACT_CALL: Transaction confirmed in block:', receipt.blockNumber.toString())
       console.log('CONTRACT_CALL: Gas used:', receipt.gasUsed?.toString())
       console.log('CONTRACT_CALL: Transaction status:', receipt.status === 'success' ? 'SUCCESS' : 'FAILED')
@@ -343,7 +351,7 @@ export class EventFactoryService {
       
       // Look for specific events to confirm operations
       let rtaNftMinted = false
-      let ticketFactoryDeployed = false
+      let ticketKioskDeployed = false
       
       receipt.logs.forEach((log: any, index: number) => {
         try {
@@ -369,7 +377,7 @@ export class EventFactoryService {
 
       // Step 9: Get event details from contract using expected event ID
       console.log('CONTRACT_CALL: Step 8 - Fetching created event details from EventFactory')
-      const eventData = await this.publicClient.readContract({
+      const eventData = await this.getPublicClient().readContract({
         address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
         abi: EVENT_FACTORY_ABI,
         functionName: 'getEvent',
@@ -380,21 +388,21 @@ export class EventFactoryService {
       console.log('CONTRACT_CALL: ✅ Final verification results:')
       console.log('CONTRACT_CALL: - Event ID:', expectedEventId)
       console.log('CONTRACT_CALL: - Creator address:', eventData.creator)
-      console.log('CONTRACT_CALL: - TicketFactory address:', eventData.ticketFactoryAddress)
+      console.log('CONTRACT_CALL: - TicketKiosk address:', eventData.ticketKioskAddress)
       console.log('CONTRACT_CALL: - Event finalized:', eventData.finalized)
       console.log('CONTRACT_CALL: - Metadata URI:', eventData.metadataURI)
       console.log('CONTRACT_CALL: - Start date:', new Date(Number(eventData.startDate) * 1000).toISOString())
       console.log('CONTRACT_CALL: - Reserve price:', formatEther(eventData.reservePrice), 'SEI')
       
-      // Verify TicketFactory is properly deployed
-      if (eventData.ticketFactoryAddress && eventData.ticketFactoryAddress !== '0x0000000000000000000000000000000000000000') {
-        console.log('CONTRACT_CALL: ✅ TicketFactory deployed successfully at:', eventData.ticketFactoryAddress)
-        ticketFactoryDeployed = true
+      // Verify TicketKiosk is properly deployed
+      if (eventData.ticketKioskAddress && eventData.ticketKioskAddress !== '0x0000000000000000000000000000000000000000') {
+        console.log('CONTRACT_CALL: ✅ TicketKiosk deployed successfully at:', eventData.ticketKioskAddress)
+        ticketKioskDeployed = true
         
-        // Test TicketFactory is working
+        // Test TicketKiosk is working
         try {
-          const ticketFactoryInfo = await this.publicClient.readContract({
-            address: eventData.ticketFactoryAddress as `0x${string}`,
+          const ticketKioskInfo = await this.getPublicClient().readContract({
+            address: eventData.ticketKioskAddress as `0x${string}`,
             abi: [{
               "type": "function",
               "name": "getSalesInfo",
@@ -410,20 +418,20 @@ export class EventFactoryService {
             functionName: 'getSalesInfo'
           })
           
-          console.log('CONTRACT_CALL: ✅ TicketFactory operational verification:')
-          console.log('CONTRACT_CALL: - Total tickets available:', ticketFactoryInfo[0].toString())
-          console.log('CONTRACT_CALL: - Tickets sold:', ticketFactoryInfo[1].toString())
-          console.log('CONTRACT_CALL: - Ticket price:', formatEther(ticketFactoryInfo[3]), 'SEI')
+          console.log('CONTRACT_CALL: ✅ TicketKiosk operational verification:')
+          console.log('CONTRACT_CALL: - Total tickets available:', ticketKioskInfo[0].toString())
+          console.log('CONTRACT_CALL: - Tickets sold:', ticketKioskInfo[1].toString())
+          console.log('CONTRACT_CALL: - Ticket price:', formatEther(ticketKioskInfo[3]), 'SEI')
           
         } catch (error) {
-          console.warn('CONTRACT_CALL: ⚠️ Could not verify TicketFactory functionality:', error)
+          console.warn('CONTRACT_CALL: ⚠️ Could not verify TicketKiosk functionality:', error)
         }
       }
 
       // Summary of operations
       console.log('CONTRACT_CALL: 🎉 Event creation summary:')
       console.log('CONTRACT_CALL: - RTA NFT minted:', rtaNftMinted ? '✅' : '⚠️')
-      console.log('CONTRACT_CALL: - TicketFactory deployed:', ticketFactoryDeployed ? '✅' : '⚠️')
+      console.log('CONTRACT_CALL: - TicketKiosk deployed:', ticketKioskDeployed ? '✅' : '⚠️')
       console.log('CONTRACT_CALL: - Transaction hash:', txHash)
       console.log('CONTRACT_CALL: - Block number:', receipt.blockNumber.toString())
 
@@ -435,7 +443,7 @@ export class EventFactoryService {
         reservePrice: formatEther(eventData.reservePrice),
         metadataURI: eventData.metadataURI,
         artCategory: eventData.artCategory,
-        ticketFactoryAddress: eventData.ticketFactoryAddress,
+        ticketKioskAddress: eventData.ticketKioskAddress,
         txHash
       }
 
@@ -450,7 +458,7 @@ export class EventFactoryService {
    */
   async getEventDetails(eventId: number) {
     try {
-      const eventData = await this.publicClient.readContract({
+      const eventData = await this.getPublicClient().readContract({
         address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
         abi: EVENT_FACTORY_ABI,
         functionName: 'getEvent',
@@ -463,7 +471,7 @@ export class EventFactoryService {
         eventDuration: Number(eventData.eventDuration),
         reservePrice: formatEther(eventData.reservePrice),
         metadataURI: eventData.metadataURI,
-        ticketFactoryAddress: eventData.ticketFactoryAddress,
+        ticketKioskAddress: eventData.ticketKioskAddress,
         finalized: eventData.finalized
       }
     } catch (error) {
@@ -477,7 +485,7 @@ export class EventFactoryService {
    */
   async getTotalEvents(): Promise<number> {
     try {
-      const total = await this.publicClient.readContract({
+      const total = await this.getPublicClient().readContract({
         address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
         abi: EVENT_FACTORY_ABI,
         functionName: 'totalEvents'

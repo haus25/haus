@@ -90,11 +90,11 @@ export const getEventFactoryConfig = (abi: any) => {
   return getContractConfig(CONTRACT_ADDRESSES.EVENT_FACTORY, abi)
 }
 
-export const getTicketFactoryConfig = (abi: any) => {
-  if (!CONTRACT_ADDRESSES.TICKET_FACTORY) {
-    throw new Error('Ticket Factory contract address not configured')
+export const getTicketKioskConfig = (abi: any) => {
+  if (!CONTRACT_ADDRESSES.TICKET_KIOSK) {
+    throw new Error('Ticket Kiosk contract address not configured')
   }
-  return getContractConfig(CONTRACT_ADDRESSES.TICKET_FACTORY, abi)
+  return getContractConfig(CONTRACT_ADDRESSES.TICKET_KIOSK, abi)
 }
 
 export const getLiveTippingConfig = (abi: any) => {

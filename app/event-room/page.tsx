@@ -1,549 +1,601 @@
 "use client"
 
-import type React from "react"
-
-import { useState, useRef, useEffect } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Navbar } from "../components/navbar"
 import { Button } from "../components/ui/button"
-import { Slider } from "../components/ui/slider"
+import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
+import { Badge } from "../components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar"
-import { Card, CardContent } from "../components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
-import { DollarSign, Crown, Video, Eye, Share2 } from "lucide-react"
-import { TipModal } from "../components/tipModal"
 import { Breadcrumbs } from "../components/breadcrumbs"
-import { Switch } from "../components/ui/switch"
-import { Label } from "../components/ui/label"
-import { useAuth } from "../contexts/auth"
-import { EventVideoPlayer } from "../components/videoPlayer"
-import { TicketVerification } from "../components/ticketVerification"
-import { EventChat } from "../components/eventChat"
 import { WebRTCStreaming } from "../components/webrtcStreaming"
-import { getRandomVideo } from "../lib/constants"
+import { EventChat } from "../components/eventChat"
+import { useAuth } from "../contexts/auth"
+import { createEventFactoryService } from "../services/create"
+import { useWalletClient } from "wagmi"
+import { 
+  Video, 
+  Users, 
+  Clock, 
+  Calendar,
+  DollarSign,
+  Crown,
+  ArrowLeft,
+  Loader2,
+  AlertCircle,
+  CheckCircle,
+  ExternalLink
+} from "lucide-react"
+import { toast } from "sonner"
 
 export default function EventRoom() {
-  const { userProfile } = useAuth()
+  const { userProfile, isConnected } = useAuth()
+  const { data: walletClient } = useWalletClient()
   const router = useRouter()
   const searchParams = useSearchParams()
 
+  // Get parameters from URL
   const eventId = searchParams.get("eventId")
+  const isCreator = searchParams.get("isCreator") === "true"
   const ticketId = searchParams.get("ticketId")
 
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const [isMuted, setIsMuted] = useState(false)
-  const [tipAmount, setTipAmount] = useState(5)
-  const [chatMessage, setChatMessage] = useState("")
-  const [chatMessages, setChatMessages] = useState([
-    {
-      id: 1,
-      user: "artist.eth",
-      message: "Welcome everyone to my live painting session!",
-      timestamp: new Date().toISOString(),
-    },
-    { id: 2, user: "collector1.eth", message: "Excited to be here!", timestamp: new Date().toISOString() },
-    { id: 3, user: "art_lover.eth", message: "The colors are amazing already", timestamp: new Date().toISOString() },
-    {
-      id: 4,
-      user: "nft_whale.eth",
-      message: "Just tipped 20 SEI! Love your work",
-      timestamp: new Date().toISOString(),
-    },
-  ])
-  const [showChat, setShowChat] = useState(false)
-  const [viewMode, setViewMode] = useState<"watch" | "stream">("watch")
-  const [isTipModalOpen, setIsTipModalOpen] = useState(false)
-
-  const [isCameraOn, setIsCameraOn] = useState(true)
-  const [isMicOn, setIsMicOn] = useState(true)
-  const [isScreenSharing, setIsScreenSharing] = useState(false)
-  const [screenFormat, setScreenFormat] = useState<"default" | "overlay" | "side">("default")
-  const [hasTicket, setHasTicket] = useState(false)
-  const [isVerifyingTicket, setIsVerifyingTicket] = useState(true)
-  const [timeRemaining, setTimeRemaining] = useState(60 * 60) // 60 minutes in seconds
-  const [eventDuration, setEventDuration] = useState(60 * 60) // Default 60 minutes
-  const [eventData, setEventData] = useState({
-    id: eventId || "1",
-    title: "Live Painting Session: Abstract Landscapes",
-    creator: "artist.eth",
-    category: "live-painting",
-    date: new Date().toISOString(),
-    duration: 60, // in minutes
-    ticketPrice: 10,
-    status: "live",
+  // State management
+  const [eventData, setEventData] = useState<any>(null)
+  const [isLoadingEvent, setIsLoadingEvent] = useState(true)
+  const [streamStatus, setStreamStatus] = useState({
+    isLive: false,
+    viewerCount: 0,
+    hasAccess: false
   })
-  const [videoSource, setVideoSource] = useState("")
-  const [showTitle, setShowTitle] = useState(true)
+  const [chatMessages, setChatMessages] = useState<any[]>([])
+  const [chatMessage, setChatMessage] = useState("")
+  const [activeTab, setActiveTab] = useState("stream")
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
-  const titleTimerRef = useRef<NodeJS.Timeout | null>(null)
-
-  // Mock user tickets for verification
-  const userTickets = [
-    { id: "1", eventId: "1", category: "live-painting" },
-    { id: "2", eventId: "2", category: "standup-comedy" },
-    { id: "3", eventId: "3", category: "poetry-slam" },
-  ]
-
-  // Mock data for participants and top tippers
-  const participants = [
-    { id: 1, name: "artist.eth", avatar: "/placeholder.svg?height=40&width=40", isPerformer: true },
-    {
-      id: 2,
-      name: userProfile?.displayName || userProfile?.name || "jabyl.eth",
-      avatar:
-        userProfile?.avatar ||
-        "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/21c09ec3-fb44-40b5-9ffc-6fedc032fe3b-I36E2znZKmldANSRQFL5kgjSSjYRka.jpeg",
-      tipped: 50,
-    },
-    { id: 3, name: "art_lover.eth", avatar: "/placeholder.svg?height=40&width=40", tipped: 35 },
-    { id: 4, name: "nft_whale.eth", avatar: "/placeholder.svg?height=40&width=40", tipped: 20 },
-    { id: 5, name: "crypto_fan.eth", avatar: "/placeholder.svg?height=40&width=40", tipped: 15 },
-    { id: 6, name: "web3_user.eth", avatar: "/placeholder.svg?height=40&width=40", tipped: 10 },
-    { id: 7, name: "defi_guy.eth", avatar: "/placeholder.svg?height=40&width=40", tipped: 5 },
-    { id: 8, name: "token_holder.eth", avatar: "/placeholder.svg?height=40&width=40", tipped: 5 },
-  ]
-
-  const topTippers = [...participants].sort((a, b) => (b.tipped || 0) - (a.tipped || 0)).slice(0, 5)
-
-  // Initialize event data and check ticket
+  // Load event data from blockchain
   useEffect(() => {
-    // Simulate loading event data
-    if (eventId) {
-      // In a real app, fetch event data from API
-      const mockEventData = {
-        id: eventId,
-        title: "Live Painting Session: Abstract Landscapes",
-        creator: "artist.eth",
-        category: "live-painting",
-        date: new Date().toISOString(),
-        duration: 60, // in minutes
-        ticketPrice: 10,
-        status: "live",
+    const loadEventData = async () => {
+      if (!eventId || !walletClient) return
+
+      try {
+        setIsLoadingEvent(true)
+        console.log('EVENT_ROOM: Loading event data for ID:', eventId)
+
+        const eventService = createEventFactoryService(walletClient)
+        const eventDetails = await eventService.getEventDetails(parseInt(eventId))
+
+        console.log('EVENT_ROOM: Event details loaded:', eventDetails)
+
+        // Check event availability first
+        const { streamingService } = await import('../services/streaming')
+        const availability = await streamingService.checkEventAvailability(eventId)
+        
+        console.log('EVENT_ROOM: Event availability:', availability)
+
+        if (!availability.available && availability.hasEnded) {
+          // Event has ended, show expired message
+          setEventData({
+            id: eventId,
+            title: `Event #${eventId}`,
+            expired: true,
+            message: availability.message
+          })
+          setIsLoadingEvent(false)
+          return
+        }
+
+         // Fetch metadata from IPFS if available
+         let eventMetadata: any = {}
+         if (eventDetails.metadataURI) {
+           try {
+             const metadataResponse = await fetch(eventDetails.metadataURI)
+             if (metadataResponse.ok) {
+               eventMetadata = await metadataResponse.json()
+             }
+           } catch (error) {
+             console.warn('EVENT_ROOM: Could not load event metadata:', error)
+           }
+         }
+
+         const eventData = {
+           id: eventId,
+           contractEventId: eventId,
+           creator: eventDetails.creator,
+           startDate: eventDetails.startDate * 1000, // Convert to milliseconds
+           eventDuration: eventDetails.eventDuration, // in seconds
+           reservePrice: eventDetails.reservePrice,
+           metadataURI: eventDetails.metadataURI,
+           ticketKioskAddress: eventDetails.ticketKioskAddress,
+           finalized: eventDetails.finalized,
+           // From metadata
+           title: eventMetadata?.title || `Event #${eventId}`,
+           description: eventMetadata?.description || '',
+           category: eventMetadata?.category || 'general',
+           image: eventMetadata?.image || '',
+           // Availability info
+           available: availability.available,
+           isActive: availability.isActive,
+           hasEnded: availability.hasEnded,
+           ...eventMetadata
+         }
+
+        setEventData(eventData)
+
+        console.log('EVENT_ROOM: Event data set:', eventData)
+
+      } catch (error) {
+        console.error('EVENT_ROOM: Error loading event data:', error)
+        toast.error('Failed to load event data')
+      } finally {
+        setIsLoadingEvent(false)
       }
-
-      setEventData(mockEventData)
-      setEventDuration(mockEventData.duration * 60) // Convert minutes to seconds
-      setTimeRemaining(mockEventData.duration * 60) // Reset timer
-
-      // Set video source based on event category
-      setVideoSource(getRandomVideo(mockEventData.category))
-    } else {
-      // Default video if no event ID - use the default category
-      setVideoSource(getRandomVideo("default"))
     }
 
-    // Simulate ticket verification
-    setTimeout(() => {
-      // Check if user has a ticket for this event
-      const hasValidTicket = userTickets.some((ticket) => ticket.eventId === eventId && ticket.id === ticketId)
-      setHasTicket(hasValidTicket || false)
-      setIsVerifyingTicket(false)
-    }, 2000)
-  }, [eventId, ticketId])
+    loadEventData()
+  }, [eventId, walletClient])
 
-  // Start the countdown timer
+  // Initialize chat with welcome message
   useEffect(() => {
-    if (hasTicket) {
-      // Set up the timer
-      timerRef.current = setInterval(() => {
-        setTimeRemaining((prev) => {
-          if (prev <= 1) {
-            if (timerRef.current) {
-              clearInterval(timerRef.current)
-            }
-            return 0
-          }
-          return prev - 1
-        })
-      }, 1000)
+    if (eventData && userProfile) {
+      setChatMessages([
+        {
+          id: 1,
+          user: "system",
+          message: `Welcome to ${eventData.title || `Event #${eventId}`}!`,
+          timestamp: new Date().toISOString(),
+          isSystem: true
+        }
+      ])
     }
+  }, [eventData, userProfile])
 
-    // Clean up on unmount
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-      }
-    }
-  }, [hasTicket])
+  // Handle stream status changes
+  const handleStreamStatusChange = (status: {
+    isLive: boolean
+    viewerCount: number
+    hasAccess: boolean
+  }) => {
+    setStreamStatus(status)
+    console.log('EVENT_ROOM: Stream status updated:', status)
+  }
 
-  // Handle title display in fullscreen mode
-  useEffect(() => {
-    if (isFullscreen) {
-      setShowTitle(true)
-
-      // Hide title after 3 seconds
-      titleTimerRef.current = setTimeout(() => {
-        setShowTitle(false)
-      }, 3000)
-    } else {
-      setShowTitle(true)
-
-      // Clear any existing timer
-      if (titleTimerRef.current) {
-        clearTimeout(titleTimerRef.current)
-      }
-    }
-
-    return () => {
-      if (titleTimerRef.current) {
-        clearTimeout(titleTimerRef.current)
-      }
-    }
-  }, [isFullscreen])
-
+  // Handle chat message sending
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault()
-    if (chatMessage.trim()) {
-      setChatMessages([
-        ...chatMessages,
-        {
+    if (chatMessage.trim() && userProfile) {
+      const newMessage = {
           id: chatMessages.length + 1,
-          user: userProfile?.displayName || userProfile?.name || "you.eth",
+        user: userProfile.displayName || userProfile.name || "Anonymous",
           message: chatMessage,
           timestamp: new Date().toISOString(),
-        },
-      ])
+        avatar: userProfile.avatar
+      }
+
+      setChatMessages(prev => [...prev, newMessage])
       setChatMessage("")
     }
   }
 
-  const handleTipSuccess = () => {
-    setIsTipModalOpen(false)
-    // Add the tip message to the chat
-    setChatMessages([
-      ...chatMessages,
-      {
-        id: chatMessages.length + 1,
-        user: "system",
-        message: `${userProfile?.displayName || userProfile?.name || "you.eth"} tipped ${tipAmount} SEI!`,
-        timestamp: new Date().toISOString(),
-      },
-    ])
-
+  // Check if event has started
+  const hasEventStarted = () => {
+    if (!eventData) return false
+    return new Date() >= new Date(eventData.startDate)
   }
 
-  const toggleFullscreen = () => {
-    setIsFullscreen(!isFullscreen)
+  // Check if event has ended
+  const hasEventEnded = () => {
+    if (!eventData) return false
+    const endTime = new Date(eventData.startDate + eventData.eventDuration * 1000)
+    return new Date() >= endTime
   }
 
-  const toggleMute = () => {
-    setIsMuted(!isMuted)
+  // Get time until event starts/ends
+  const getEventTiming = () => {
+    if (!eventData) return { status: 'loading', timeText: '' }
+    
+    const now = new Date()
+    const startTime = new Date(eventData.startDate)
+    const endTime = new Date(eventData.startDate + eventData.eventDuration * 1000)
+
+    if (now < startTime) {
+      const timeUntilStart = startTime.getTime() - now.getTime()
+      const hours = Math.floor(timeUntilStart / (1000 * 60 * 60))
+      const minutes = Math.floor((timeUntilStart % (1000 * 60 * 60)) / (1000 * 60))
+      return { 
+        status: 'upcoming', 
+        timeText: `Starts in ${hours > 0 ? `${hours}h ` : ''}${minutes}m` 
+      }
+    } else if (now <= endTime) {
+      const timeUntilEnd = endTime.getTime() - now.getTime()
+      const hours = Math.floor(timeUntilEnd / (1000 * 60 * 60))
+      const minutes = Math.floor((timeUntilEnd % (1000 * 60 * 60)) / (1000 * 60))
+      return { 
+        status: 'live', 
+        timeText: `${hours > 0 ? `${hours}h ` : ''}${minutes}m remaining` 
+      }
+    } else {
+      return { status: 'ended', timeText: 'Event ended' }
+    }
   }
 
-  const toggleCamera = () => {
-    setIsCameraOn(!isCameraOn)
+  // Redirect to room.haus25.live for live events
+  useEffect(() => {
+    if (eventData && hasEventStarted() && !hasEventEnded()) {
+      const streamingUrl = `https://room.haus25.live/${eventId}${isCreator ? '?isCreator=true' : ''}${ticketId ? `&ticketId=${ticketId}` : ''}`
+      
+      // Show user they're being redirected
+      toast.info('Redirecting to live stream...', { duration: 2000 })
+      
+      setTimeout(() => {
+        window.location.href = streamingUrl
+      }, 2000)
+    }
+  }, [eventData, eventId, isCreator, ticketId])
+
+  if (!eventId) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Navbar />
+        <main className="flex-1 container py-12 flex items-center justify-center">
+          <div className="text-center">
+            <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold mb-2">No Event ID</h1>
+            <p className="text-muted-foreground mb-6">
+              Please provide a valid event ID to access the event room.
+            </p>
+            <Button onClick={() => router.push('/ticket-kiosk')}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Ticket Kiosk
+            </Button>
+          </div>
+        </main>
+      </div>
+    )
   }
 
-  const toggleMic = () => {
-    setIsMicOn(!isMicOn)
+  if (isLoadingEvent) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Navbar />
+        <main className="flex-1 container py-12 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+            <p className="text-muted-foreground">Loading event details...</p>
+          </div>
+        </main>
+      </div>
+    )
   }
 
-  const toggleScreenShare = () => {
-    setIsScreenSharing(!isScreenSharing)
+  if (!eventData) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Navbar />
+        <main className="flex-1 container py-12 flex items-center justify-center">
+          <div className="text-center">
+            <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold mb-2">Event Not Found</h1>
+            <p className="text-muted-foreground mb-6">
+              The event you're looking for doesn't exist or couldn't be loaded.
+            </p>
+            <Button onClick={() => router.push('/ticket-kiosk')}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Ticket Kiosk
+            </Button>
+          </div>
+        </main>
+      </div>
+    )
   }
 
-  const verifyTicket = () => {
-    setIsVerifyingTicket(true)
-    // Simulate verification process
-    setTimeout(() => {
-      setHasTicket(true)
-      setIsVerifyingTicket(false)
-    }, 1500)
+  // Handle expired events
+  if (eventData.expired || eventData.hasEnded) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Navbar />
+        <main className="flex-1 container py-12 flex items-center justify-center">
+          <div className="text-center">
+            <Clock className="h-12 w-12 text-orange-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold mb-2">Event Has Ended</h1>
+            <p className="text-muted-foreground mb-2">
+              {eventData.title || `Event #${eventId}`}
+            </p>
+            <p className="text-muted-foreground mb-6">
+              {eventData.message || 'This event room is no longer available.'}
+            </p>
+            <Button onClick={() => router.push('/ticket-kiosk')}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Ticket Kiosk
+            </Button>
+          </div>
+        </main>
+      </div>
+    )
   }
+
+  const eventTiming = getEventTiming()
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Navbar />
 
       <main className="flex-1 container py-6">
-        <Breadcrumbs items={[{ label: "Event Room" }]} />
+        <Breadcrumbs items={[
+          { label: "Ticket Kiosk", href: "/ticket-kiosk" },
+          { label: eventData.title || `Event #${eventId}` }
+        ]} />
 
-        <div className="flex justify-between items-center mb-4">
-          <h1 className="text-2xl font-bold">{eventData.title}</h1>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant={viewMode === "watch" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setViewMode("watch")}
-              className={viewMode === "watch" ? "bg-primary text-primary-foreground" : ""}
-            >
-              <Eye className="h-4 w-4 mr-2" />
-              Watch
-            </Button>
-            <Button
-              variant={viewMode === "stream" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setViewMode("stream")}
-              className={viewMode === "stream" ? "bg-primary text-primary-foreground" : ""}
-            >
-              <Video className="h-4 w-4 mr-2" />
-              Stream
-            </Button>
-          </div>
-        </div>
-
-        {/* Screen Format Selection */}
-        <div className="mb-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-medium">Screen Format</h3>
-            <div className="flex space-x-2">
-              {["default", "overlay", "side"].map((format) => (
-                <Button
-                  key={format}
-                  variant={screenFormat === format ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setScreenFormat(format as any)}
-                  className={screenFormat === format ? "bg-primary text-primary-foreground" : ""}
+        {/* Event Header */}
+        <div className="mb-6">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-2">
+                <h1 className="text-3xl font-bold">{eventData.title || `Event #${eventId}`}</h1>
+                <Badge 
+                  variant={eventTiming.status === 'live' ? 'default' : eventTiming.status === 'upcoming' ? 'secondary' : 'outline'}
+                  className={eventTiming.status === 'live' ? 'bg-red-500 text-white animate-pulse' : ''}
                 >
-                  {format.charAt(0).toUpperCase() + format.slice(1)}
-                </Button>
-              ))}
+                  {eventTiming.status === 'live' && <Video className="h-3 w-3 mr-1" />}
+                  {eventTiming.status.toUpperCase()}
+                </Badge>
+              </div>
+              
+              {eventData.description && (
+                <p className="text-muted-foreground mb-4">{eventData.description}</p>
+              )}
+
+              <div className="flex items-center gap-6 text-sm text-muted-foreground">
+                <div className="flex items-center">
+                  <Calendar className="h-4 w-4 mr-2" />
+                  {new Date(eventData.startDate).toLocaleDateString()}
+                </div>
+                <div className="flex items-center">
+                  <Clock className="h-4 w-4 mr-2" />
+                  {eventTiming.timeText}
+                </div>
+                <div className="flex items-center">
+                  <Users className="h-4 w-4 mr-2" />
+                  {streamStatus.viewerCount} {streamStatus.viewerCount === 1 ? 'viewer' : 'viewers'}
+                </div>
+              </div>
             </div>
+
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex items-center gap-2">
+                <Avatar className="h-10 w-10">
+                  <AvatarImage src={eventData.creatorAvatar} alt="Creator" />
+                  <AvatarFallback>{eventData.creator?.slice(0, 2).toUpperCase()}</AvatarFallback>
+                </Avatar>
+                <div className="text-right">
+                  <p className="font-medium">Creator</p>
+                  <p className="text-sm text-muted-foreground">
+                    {eventData.creator?.slice(0, 6)}...{eventData.creator?.slice(-4)}
+                  </p>
           </div>
         </div>
 
-        {/* Title above the screen (when not in fullscreen) */}
-        {!isFullscreen && (
-          <div className="mb-2">
-            <h2 className="text-xl font-bold">{eventData.title}</h2>
-            <p className="text-sm text-muted-foreground">by {eventData.creator}</p>
-          </div>
-        )}
-
-        {/* Main Content with Conditional Layout */}
-        <div className={isFullscreen ? "fixed inset-0 z-50 p-4 bg-background" : ""}>
-          <div
-            className={`
-              ${screenFormat === "side" ? "flex gap-6" : ""}
-              ${isFullscreen ? "" : "w-full"}
-            `}
-          >
-            {/* Video Container */}
-            <div
-              className={`
-                ${screenFormat === "side" ? "w-2/3" : "w-full"}
-                ${screenFormat === "default" && !isFullscreen ? "mb-6" : ""}
-              `}
-            >
-              <EventVideoPlayer
-                videoSource={videoSource}
-                isFullscreen={isFullscreen}
-                isMuted={isMuted}
-                showChat={showChat}
-                participantsCount={participants.length}
-                timeRemaining={timeRemaining}
-                eventTitle={eventData.title}
-                creatorName={eventData.creator}
-                showTitle={showTitle}
-                onToggleFullscreen={toggleFullscreen}
-                onToggleMute={toggleMute}
-                onToggleChat={() => setShowChat(!showChat)}
-                onOpenTip={viewMode === "watch" ? () => setIsTipModalOpen(true) : undefined}
-              >
-                {/* Ticket Verification Overlay */}
-                <TicketVerification
-                  isVerifying={isVerifyingTicket}
-                  hasTicket={hasTicket}
-                  hasTicketId={!!ticketId}
-                  onVerify={verifyTicket}
-                />
-
-                {/* Chat Overlay */}
-                {screenFormat === "overlay" && !isFullscreen && hasTicket && showChat && (
-                  <div className="absolute top-0 right-0 bottom-0 w-1/3 bg-black/60 backdrop-blur-sm overflow-hidden">
-                    <EventChat
-                      messages={chatMessages}
-                      message={chatMessage}
-                      onMessageChange={setChatMessage}
-                      onSendMessage={handleSendMessage}
-                      isOverlay={true}
-                    />
-                  </div>
-                )}
-              </EventVideoPlayer>
-
-              {/* Stream Settings or Tipping Section */}
-              {!isFullscreen && hasTicket && (
-                <div className="mt-4 p-4 border rounded-lg">
-                  {viewMode === "watch" ? (
-                    <>
-                      <h3 className="text-lg font-medium mb-2">Support the Artist</h3>
-                      <div className="flex items-center space-x-4 mb-4">
-                        <span className="text-sm text-muted-foreground">Tip Amount:</span>
-                        <Slider
-                          defaultValue={[5]}
-                          max={100}
-                          step={1}
-                          value={[tipAmount]}
-                          onValueChange={(value) => setTipAmount(value[0])}
-                          className="w-full max-w-xs"
-                        />
-                        <span className="font-medium">{tipAmount} SEI</span>
-                      </div>
-                      <div className="flex space-x-2">
-                        {[5, 10, 20, 50].map((amount) => (
-                          <Button key={amount} variant="outline" size="sm" onClick={() => setTipAmount(amount)}>
-                            {amount}
-                          </Button>
-                        ))}
-                      </div>
-                      <Button
-                        className="w-full mt-4 bg-primary text-primary-foreground hover:bg-primary/90"
-                        onClick={() => setIsTipModalOpen(true)}
-                      >
-                        Send Tip
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <h3 className="text-lg font-medium mb-4">Stream Settings</h3>
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div className="space-y-0.5">
-                            <Label htmlFor="auto-record">Auto Record</Label>
-                            <p className="text-sm text-muted-foreground">
-                              Automatically record your stream to create an RTA
-                            </p>
-                          </div>
-                          <Switch id="auto-record" defaultChecked />
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <div className="space-y-0.5">
-                            <Label htmlFor="enable-chat">Enable Chat</Label>
-                            <p className="text-sm text-muted-foreground">Allow viewers to chat during your stream</p>
-                          </div>
-                          <Switch id="enable-chat" defaultChecked />
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <div className="space-y-0.5">
-                            <Label htmlFor="enable-tipping">Enable Tipping</Label>
-                            <p className="text-sm text-muted-foreground">
-                              Allow viewers to send tips during your stream
-                            </p>
-                          </div>
-                          <Switch id="enable-tipping" defaultChecked />
-                        </div>
-
-                        <div className="pt-2">
-                          <Button variant="outline" className="w-full">
-                            <Share2 className="h-4 w-4 mr-2" />
-                            Share Stream Link
-                          </Button>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
+              {hasEventStarted() && !hasEventEnded() && (
+                <Button
+                  onClick={() => {
+                    const streamingUrl = `https://room.haus25.live/${eventId}${isCreator ? '?isCreator=true' : ''}${ticketId ? `&ticketId=${ticketId}` : ''}`
+                    window.location.href = streamingUrl
+                  }}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Go to Live Stream
+                </Button>
               )}
             </div>
+          </div>
+        </div>
 
-            {/* Chat and Participants Section - Only show in default or side-by-side mode */}
-            {(screenFormat === "default" || screenFormat === "side") && !isFullscreen && hasTicket && (
-              <div className={screenFormat === "side" ? "w-1/3" : "w-full"}>
-                <Card className="h-full">
-                  <Tabs defaultValue="chat">
-                    <TabsList className="w-full">
-                      <TabsTrigger value="chat" className="flex-1">
-                        Chat
-                      </TabsTrigger>
-                      <TabsTrigger value="tippers" className="flex-1">
-                        Top Tippers
-                      </TabsTrigger>
-                      <TabsTrigger value="participants" className="flex-1">
-                        Participants
-                      </TabsTrigger>
-                    </TabsList>
+        {/* Main Content */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Stream Section */}
+          <div className="lg:col-span-2">
+            {hasEventStarted() && !hasEventEnded() ? (
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Video className="h-5 w-5" />
+                    Live Stream
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                    <Video className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                    <h3 className="text-lg font-semibold mb-2">Stream Active</h3>
+                    <p className="text-muted-foreground mb-4">
+                      This event is currently live! Click the button below to join.
+                    </p>
+                    <Button 
+                      onClick={() => {
+                        const streamingUrl = `https://room.haus25.live/${eventId}${isCreator ? '?isCreator=true' : ''}${ticketId ? `&ticketId=${ticketId}` : ''}`
+                        window.location.href = streamingUrl
+                      }}
+                      size="lg"
+                      className="bg-red-600 hover:bg-red-700"
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Join Live Stream
+                    </Button>
+          </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="mb-6">
+                <CardContent className="text-center py-12">
+                  <Clock className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <h3 className="text-lg font-semibold mb-2">
+                    {eventTiming.status === 'upcoming' ? 'Event Not Started' : 'Event Ended'}
+                  </h3>
+                  <p className="text-muted-foreground">
+                    {eventTiming.status === 'upcoming' 
+                      ? `This event will start ${eventTiming.timeText.toLowerCase()}`
+                      : 'This event has concluded'
+                    }
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Event Details */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Event Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm font-medium">Start Time</p>
+                    <p className="text-sm text-muted-foreground">
+                      {new Date(eventData.startDate).toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Duration</p>
+                    <p className="text-sm text-muted-foreground">
+                      {Math.floor(eventData.eventDuration / 60)} minutes
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Category</p>
+                    <p className="text-sm text-muted-foreground capitalize">
+                      {eventData.category?.replace('-', ' ') || 'General'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Reserve Price</p>
+                    <p className="text-sm text-muted-foreground">
+                      {eventData.reservePrice} SEI
+                    </p>
+                  </div>
+                </div>
+
+                {eventData.ticketKioskAddress && (
+                  <div>
+                    <p className="text-sm font-medium mb-2">Ticket Contract</p>
+                    <code className="text-xs bg-muted p-2 rounded block">
+                      {eventData.ticketKioskAddress}
+                    </code>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+                      </div>
+
+          {/* Chat and Info Section */}
+          <div className="space-y-6">
+            <Card>
+              <Tabs value={activeTab} onValueChange={setActiveTab}>
+                <TabsList className="w-full">
+                  <TabsTrigger value="stream" className="flex-1">Stream Info</TabsTrigger>
+                  <TabsTrigger value="chat" className="flex-1">Chat</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="stream" className="m-0">
+                  <CardContent className="p-4 space-y-4">
+                        <div className="flex items-center justify-between">
+                      <span className="text-sm">Status</span>
+                      <Badge variant={streamStatus.isLive ? 'default' : 'secondary'}>
+                        {streamStatus.isLive ? 'Live' : 'Offline'}
+                      </Badge>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                      <span className="text-sm">Viewers</span>
+                      <span className="text-sm font-medium">{streamStatus.viewerCount}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                      <span className="text-sm">Access</span>
+                      <div className="flex items-center gap-2">
+                        {streamStatus.hasAccess ? (
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <AlertCircle className="h-4 w-4 text-red-500" />
+                        )}
+                        <span className="text-sm">
+                          {streamStatus.hasAccess ? 'Verified' : 'No Access'}
+                        </span>
+                          </div>
+                        </div>
+
+                    {isCreator && (
+                      <div className="pt-2 border-t">
+                        <p className="text-sm font-medium mb-2">Creator Controls</p>
+                        <p className="text-xs text-muted-foreground">
+                          Stream controls are available in the live room
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </TabsContent>
 
                     <TabsContent value="chat" className="m-0">
                       <CardContent className="p-0">
+                     {!hasEventStarted() ? (
+                       <div className="p-4 text-center text-muted-foreground">
+                         <p>Chat will be available when the event starts</p>
+                       </div>
+                     ) : hasEventEnded() ? (
+                       <div className="p-4 text-center text-muted-foreground">
+                         <p>Event has ended</p>
+                       </div>
+                     ) : (
                         <EventChat
                           messages={chatMessages}
                           message={chatMessage}
                           onMessageChange={setChatMessage}
                           onSendMessage={handleSendMessage}
                         />
-                      </CardContent>
-                    </TabsContent>
-
-                    <TabsContent value="tippers" className="m-0">
-                      <CardContent className="p-4">
-                        <div className="space-y-4">
-                          {topTippers.map((tipper, index) => (
-                            <div key={tipper.id} className="flex items-center justify-between">
-                              <div className="flex items-center space-x-3">
-                                {index === 0 && <Crown className="h-5 w-5 text-yellow-500" />}
-                                <Avatar className="h-10 w-10">
-                                  <AvatarImage src={tipper.avatar} alt={tipper.name} />
-                                  <AvatarFallback>{tipper.name.slice(0, 2).toUpperCase()}</AvatarFallback>
-                                </Avatar>
-                                <div>
-                                  <p className="font-medium">{tipper.name}</p>
-                                  {tipper.isPerformer && (
-                                    <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
-                                      Artist
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex items-center text-primary">
-                                <DollarSign className="h-4 w-4 mr-1" />
-                                <span>{tipper.tipped || 0} SEI</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </TabsContent>
-
-                    <TabsContent value="participants" className="m-0">
-                      <CardContent className="p-4">
-                        <div className="space-y-4">
-                          {participants.map((participant) => (
-                            <div key={participant.id} className="flex items-center justify-between">
-                              <div className="flex items-center space-x-3">
-                                <Avatar className="h-10 w-10">
-                                  <AvatarImage src={participant.avatar} alt={participant.name} />
-                                  <AvatarFallback>{participant.name.slice(0, 2).toUpperCase()}</AvatarFallback>
-                                </Avatar>
-                                <div>
-                                  <p className="font-medium">{participant.name}</p>
-                                  {participant.isPerformer && (
-                                    <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
-                                      Artist
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              {participant.tipped && (
-                                <div className="flex items-center text-primary">
-                                  <DollarSign className="h-4 w-4 mr-1" />
-                                  <span>{participant.tipped} SEI</span>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                     )}
                       </CardContent>
                     </TabsContent>
                   </Tabs>
                 </Card>
+
+            {/* Access Information */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Access Requirements</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm space-y-2">
+                {isCreator ? (
+                  <div className="flex items-center gap-2">
+                    <Crown className="h-4 w-4 text-yellow-500" />
+                    <span>You are the event creator</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="h-4 w-4" />
+                    <span>Valid NFT ticket required</span>
               </div>
             )}
+                
+                <p className="text-xs text-muted-foreground">
+                  {isCreator 
+                    ? "You have full access to streaming controls"
+                    : "Purchase a ticket from the Ticket Kiosk to join"
+                  }
+                </p>
+
+                {!isCreator && (
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="w-full mt-2"
+                    onClick={() => router.push(`/ticket-kiosk/${eventId}`)}
+                  >
+                    Buy Ticket
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </div>
       </main>
-
-      <TipModal
-        isOpen={isTipModalOpen}
-        onClose={() => setIsTipModalOpen(false)}
-        onSuccess={handleTipSuccess}
-        tipAmount={tipAmount}
-        onTipAmountChange={setTipAmount}
-        
-      />
     </div>
   )
 }

@@ -28,7 +28,7 @@ import { toast } from 'sonner'
 
 interface WebRTCStreamingProps {
   eventId: string
-  ticketFactoryAddress?: string
+  ticketKioskAddress?: string
   isCreator: boolean
   eventStartTime: string
   eventDuration: number
@@ -41,7 +41,7 @@ interface WebRTCStreamingProps {
 
 export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
   eventId,
-  ticketFactoryAddress,
+  ticketKioskAddress,
   isCreator,
   eventStartTime,
   eventDuration,
@@ -79,7 +79,7 @@ export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
         return
       }
 
-      if (!ticketFactoryAddress) {
+      if (!ticketKioskAddress) {
         setHasAccess(false)
         setIsVerifyingAccess(false)
         return
@@ -88,7 +88,7 @@ export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
       try {
         const ticketService = createTicketVerificationService(walletClient)
         const verification = await ticketService.verifyEventAccess(
-          ticketFactoryAddress,
+          ticketKioskAddress,
           userProfile.address,
           parseInt(eventId)
         )
@@ -109,7 +109,7 @@ export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
     }
 
     checkAccess()
-  }, [eventId, ticketFactoryAddress, isCreator, userProfile, walletClient])
+  }, [eventId, ticketKioskAddress, isCreator, userProfile, walletClient])
 
   // Update stream status callback
   useEffect(() => {

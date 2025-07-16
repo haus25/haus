@@ -1,7 +1,7 @@
 import { parseAbi, getContract, type WalletClient } from 'viem';
 
-// TicketFactory ABI - extracted from TicketFactory.sol
-export const TICKET_FACTORY_ABI = parseAbi([
+// TicketKiosk ABI - extracted from TicketKiosk.sol
+export const TICKET_KIOSK_ABI = parseAbi([
   // View functions for ticket verification
   'function hasTicketForEvent(address user, uint256 eventId) external view returns (bool)',
   'function getUserTickets(address user) external view returns (uint256[] memory)',
@@ -54,12 +54,12 @@ class TicketVerificationService {
   }
 
   /**
-   * Get TicketFactory contract instance
+   * Get TicketKiosk contract instance
    */
-  private getTicketFactoryContract(ticketFactoryAddress: string) {
+  private getTicketKioskContract(ticketKioskAddress: string) {
     return getContract({
-      address: ticketFactoryAddress as `0x${string}`,
-      abi: TICKET_FACTORY_ABI,
+      address: ticketKioskAddress as `0x${string}`,
+      abi: TICKET_KIOSK_ABI,
       client: this.walletClient
     });
   }
@@ -68,16 +68,16 @@ class TicketVerificationService {
    * Verify if user has a ticket for a specific event
    */
   async verifyTicketForEvent(
-    ticketFactoryAddress: string,
+    ticketKioskAddress: string,
     userAddress: string,
     eventId: number
   ): Promise<boolean> {
     try {
       console.log('TICKET_VERIFICATION: Verifying ticket for event', eventId);
       console.log('TICKET_VERIFICATION: User address:', userAddress);
-      console.log('TICKET_VERIFICATION: TicketFactory address:', ticketFactoryAddress);
+      console.log('TICKET_VERIFICATION: TicketKiosk address:', ticketKioskAddress);
 
-      const contract = this.getTicketFactoryContract(ticketFactoryAddress);
+      const contract = this.getTicketKioskContract(ticketKioskAddress);
       
       const hasTicket = await contract.read.hasTicketForEvent([
         userAddress as `0x${string}`,
@@ -97,13 +97,13 @@ class TicketVerificationService {
    * Get all tickets owned by a user for a specific event
    */
   async getUserTicketsForEvent(
-    ticketFactoryAddress: string,
+    ticketKioskAddress: string,
     userAddress: string
   ): Promise<number[]> {
     try {
       console.log('TICKET_VERIFICATION: Getting user tickets');
       
-      const contract = this.getTicketFactoryContract(ticketFactoryAddress);
+      const contract = this.getTicketKioskContract(ticketKioskAddress);
       
       const ticketIds = await contract.read.getUserTickets([
         userAddress as `0x${string}`
@@ -125,13 +125,13 @@ class TicketVerificationService {
    * Get detailed information about a specific ticket
    */
   async getTicketInfo(
-    ticketFactoryAddress: string,
+    ticketKioskAddress: string,
     ticketId: number
   ): Promise<TicketInfo | null> {
     try {
       console.log('TICKET_VERIFICATION: Getting ticket info for ID:', ticketId);
       
-      const contract = this.getTicketFactoryContract(ticketFactoryAddress);
+      const contract = this.getTicketKioskContract(ticketKioskAddress);
       
       const ticketInfo = await contract.read.getTicketInfo([BigInt(ticketId)]);
       
@@ -156,11 +156,11 @@ class TicketVerificationService {
   /**
    * Get event sales information
    */
-  async getEventSalesInfo(ticketFactoryAddress: string): Promise<EventSalesInfo | null> {
+  async getEventSalesInfo(ticketKioskAddress: string): Promise<EventSalesInfo | null> {
     try {
       console.log('TICKET_VERIFICATION: Getting event sales info');
       
-      const contract = this.getTicketFactoryContract(ticketFactoryAddress);
+      const contract = this.getTicketKioskContract(ticketKioskAddress);
       
       const salesInfo = await contract.read.getSalesInfo();
       
@@ -181,9 +181,9 @@ class TicketVerificationService {
   /**
    * Check if tickets are still available for purchase
    */
-  async areTicketsAvailable(ticketFactoryAddress: string): Promise<boolean> {
+  async areTicketsAvailable(ticketKioskAddress: string): Promise<boolean> {
     try {
-      const contract = this.getTicketFactoryContract(ticketFactoryAddress);
+      const contract = this.getTicketKioskContract(ticketKioskAddress);
       return await contract.read.isAvailable();
     } catch (error) {
       console.error('TICKET_VERIFICATION: Error checking availability:', error);
@@ -192,16 +192,16 @@ class TicketVerificationService {
   }
 
   /**
-   * Get event basic information from TicketFactory
+   * Get event basic information from TicketKiosk
    */
-  async getEventBasicInfo(ticketFactoryAddress: string): Promise<{
+  async getEventBasicInfo(ticketKioskAddress: string): Promise<{
     eventId: number;
     creator: string;
     ticketPrice: string;
     artCategory: string;
   } | null> {
     try {
-      const contract = this.getTicketFactoryContract(ticketFactoryAddress);
+      const contract = this.getTicketKioskContract(ticketKioskAddress);
       
       const [eventId, creator, ticketPrice, artCategory] = await Promise.all([
         contract.read.eventId(),
@@ -227,7 +227,7 @@ class TicketVerificationService {
    * Comprehensive ticket verification for event room access
    */
   async verifyEventAccess(
-    ticketFactoryAddress: string,
+    ticketKioskAddress: string,
     userAddress: string,
     eventId: number
   ): Promise<{
@@ -243,7 +243,7 @@ class TicketVerificationService {
 
       // Check if user has a ticket for this specific event
       const hasTicket = await this.verifyTicketForEvent(
-        ticketFactoryAddress,
+        ticketKioskAddress,
         userAddress,
         eventId
       );
@@ -259,12 +259,12 @@ class TicketVerificationService {
 
       // Get user's tickets
       const userTickets = await this.getUserTicketsForEvent(
-        ticketFactoryAddress,
+        ticketKioskAddress,
         userAddress
       );
 
       // Get event information
-      const eventInfo = await this.getEventBasicInfo(ticketFactoryAddress);
+      const eventInfo = await this.getEventBasicInfo(ticketKioskAddress);
 
       console.log('TICKET_VERIFICATION: Access verification completed successfully');
       
@@ -290,7 +290,7 @@ class TicketVerificationService {
    * Monitor ticket verification status for real-time updates
    */
   async monitorTicketStatus(
-    ticketFactoryAddress: string,
+    ticketKioskAddress: string,
     userAddress: string,
     eventId: number,
     onStatusChange: (status: { hasAccess: boolean; reason: string }) => void
@@ -300,7 +300,7 @@ class TicketVerificationService {
     const checkStatus = async () => {
       try {
         const verification = await this.verifyEventAccess(
-          ticketFactoryAddress,
+          ticketKioskAddress,
           userAddress,
           eventId
         );

@@ -64,7 +64,7 @@ export function QuickAccess() {
               variant="outline"
               size="icon"
               className="rounded-full bg-background shadow-md"
-              onClick={() => handleButtonClick("/event-market")}
+              onClick={() => handleButtonClick("/ticket-kiosk")}
             >
               <Compass className="h-4 w-4" />
               <span className="sr-only">Discover Events</span>

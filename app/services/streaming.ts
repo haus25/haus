@@ -290,6 +290,22 @@ class StreamingService {
    */
   async checkStreamStatus(eventId: string): Promise<boolean> {
     try {
+      // Use production backend URL or fallback to localhost for development
+      const backendUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://room.haus25.live/api'
+        : 'http://localhost:3001';
+
+      // First try backend service
+      const backendResponse = await fetch(`${backendUrl}/stream/${eventId}/status`);
+      if (backendResponse.ok) {
+        const backendData = await backendResponse.json();
+        console.log('STREAMING: Stream status from backend:', backendData);
+        return backendData.isLive;
+      }
+
+      console.log('STREAMING: Backend unavailable, checking SRS directly');
+      
+      // Fallback to direct SRS check
       const response = await fetch(`https://${this.srsBaseUrl}:1985/api/v1/streams/`);
       const data = await response.json();
       
@@ -308,7 +324,7 @@ class StreamingService {
 
   /**
    * Reserve stream URL for event (called during event creation)
-   * Now simply generates URLs since event data is stored on blockchain
+   * Communicates with backend stream service
    */
   async reserveStreamUrl(eventId: string, startTime: string, duration: number): Promise<{
     reserved: boolean;
@@ -316,25 +332,53 @@ class StreamingService {
     eventRoomUrl: string;
   }> {
     try {
-      console.log('STREAMING: Generating stream URLs for event', eventId);
+      console.log('STREAMING: Reserving stream URLs for event', eventId);
 
-      // Generate stream URLs
-      const streamUrls = this.generateStreamUrls(eventId);
+      // Use production backend URL or fallback to localhost for development
+      const backendUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://room.haus25.live/api'
+        : 'http://localhost:3001';
+
+      // Call backend to reserve stream
+      const response = await fetch(`${backendUrl}/stream/reserve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          eventId,
+          startTime,
+          duration
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Backend responded with status: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      console.log('STREAMING: Stream URLs reserved successfully via backend');
+
+      return {
+        reserved: result.success,
+        streamUrls: result.streamUrls,
+        eventRoomUrl: result.eventRoomUrl
+      };
+
+    } catch (error) {
+      console.error('STREAMING: Error reserving stream URLs:', error);
+      // Fallback to direct URL generation if backend is unavailable
+      console.log('STREAMING: Falling back to direct URL generation');
       
-      // Create event room URL
+      const streamUrls = this.generateStreamUrls(eventId);
       const eventRoomUrl = `${this.eventRoomUrl}/${eventId}`;
-
-      console.log('STREAMING: Stream URLs generated successfully');
 
       return {
         reserved: true,
         streamUrls,
         eventRoomUrl
       };
-
-    } catch (error) {
-      console.error('STREAMING: Error generating stream URLs:', error);
-      throw error;
     }
   }
 
@@ -350,6 +394,181 @@ class StreamingService {
       streamUrls: this.generateStreamUrls(eventId),
       eventRoomUrl: `${this.eventRoomUrl}/${eventId}`
     };
+  }
+
+  /**
+   * Get comprehensive stream information from backend
+   */
+  async getStreamInfo(eventId: string): Promise<{
+    streamUrls: StreamSession;
+    eventRoomUrl: string;
+    isLive: boolean;
+  }> {
+    try {
+      console.log('STREAMING: Getting stream info from backend for event', eventId);
+
+      // Use production backend URL or fallback to localhost for development
+      const backendUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://room.haus25.live/api'
+        : 'http://localhost:3001';
+
+      const response = await fetch(`${backendUrl}/stream/${eventId}`);
+      if (response.ok) {
+        const result = await response.json();
+        console.log('STREAMING: Stream info from backend:', result);
+        
+        // Also check live status
+        const isLive = await this.checkStreamStatus(eventId);
+        
+        return {
+          streamUrls: result.streamUrls,
+          eventRoomUrl: result.eventRoomUrl,
+          isLive
+        };
+      }
+
+      console.log('STREAMING: Backend unavailable, using fallback');
+      
+      // Fallback to direct generation
+      const streamInfo = this.getReservedStream(eventId);
+      const isLive = await this.checkStreamStatus(eventId);
+      
+      return {
+        ...streamInfo,
+        isLive
+      };
+
+    } catch (error) {
+      console.error('STREAMING: Error getting stream info:', error);
+      
+      // Final fallback
+      const streamInfo = this.getReservedStream(eventId);
+      return {
+        ...streamInfo,
+        isLive: false
+      };
+    }
+  }
+
+  /**
+   * Check if an event room is still available (hasn't expired)
+   */
+  async checkEventAvailability(eventId: string): Promise<{
+    available: boolean;
+    isActive: boolean;
+    hasEnded: boolean;
+    startTime?: string;
+    duration?: number;
+    message: string;
+  }> {
+    try {
+      console.log('STREAMING: Checking event availability for', eventId);
+
+      // Use production backend URL or fallback to localhost for development
+      const backendUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://room.haus25.live/api'
+        : 'http://localhost:3001';
+
+      const response = await fetch(`${backendUrl}/stream/${eventId}/availability`);
+      
+      if (response.status === 404) {
+        return {
+          available: false,
+          isActive: false,
+          hasEnded: false,
+          message: 'Event not found or never reserved'
+        };
+      }
+
+      if (!response.ok) {
+        throw new Error(`Backend responded with status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('STREAMING: Event availability result:', result);
+
+      return {
+        available: result.available,
+        isActive: result.isActive,
+        hasEnded: result.hasEnded,
+        startTime: result.startTime,
+        duration: result.duration,
+        message: result.message
+      };
+
+    } catch (error) {
+      console.error('STREAMING: Error checking event availability:', error);
+      // Fallback to assume available if backend is unavailable
+      return {
+        available: true,
+        isActive: false,
+        hasEnded: false,
+        message: 'Could not verify event status - proceeding with caution'
+      };
+    }
+  }
+
+  /**
+   * Check if stream is currently live and event is available
+   */
+  async checkStreamAndEventStatus(eventId: string): Promise<{
+    isLive: boolean;
+    available: boolean;
+    isActive: boolean;
+    hasEnded: boolean;
+    eventData?: any;
+    message: string;
+  }> {
+    try {
+      console.log('STREAMING: Checking stream and event status for', eventId);
+
+      // Use production backend URL or fallback to localhost for development
+      const backendUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://room.haus25.live/api'
+        : 'http://localhost:3001';
+
+      const response = await fetch(`${backendUrl}/stream/${eventId}/status`);
+      
+      if (!response.ok) {
+        throw new Error(`Backend responded with status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('STREAMING: Stream and event status result:', result);
+
+      return {
+        isLive: result.isLive,
+        available: result.available,
+        isActive: result.isActive,
+        hasEnded: result.hasEnded,
+        eventData: result.eventData,
+        message: result.message
+      };
+
+    } catch (error) {
+      console.error('STREAMING: Error checking stream status:', error);
+      // Fallback behavior
+      return {
+        isLive: false,
+        available: true,
+        isActive: false,
+        hasEnded: false,
+        message: 'Could not verify stream status'
+      };
+    }
+  }
+
+  /**
+   * Check if stream is currently live (legacy method for backward compatibility)
+   */
+  async isStreamLive(eventId: string): Promise<boolean> {
+    try {
+      const status = await this.checkStreamAndEventStatus(eventId);
+      return status.isLive && status.available;
+    } catch (error) {
+      console.error('STREAMING: Error checking stream status:', error);
+      return false;
+    }
   }
 }
 

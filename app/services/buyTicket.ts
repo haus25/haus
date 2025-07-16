@@ -9,8 +9,8 @@ const CONTRACT_ADDRESSES = {
   TreasuryReceiver: process.env.TREASURY_RECEIVER!,
 } as const
 
-// TicketFactory ABI for ticket purchases
-const TICKET_FACTORY_ABI = [
+// Ticket Kiosk ABI for ticket purchases
+const TICKET_KIOSK_ABI = [
   {
     "type": "function",
     "name": "purchaseTicket",
@@ -26,7 +26,8 @@ const TICKET_FACTORY_ABI = [
       {"name": "totalTickets", "type": "uint256", "internalType": "uint256"},
       {"name": "soldTickets", "type": "uint256", "internalType": "uint256"},
       {"name": "remainingTickets", "type": "uint256", "internalType": "uint256"},
-      {"name": "price", "type": "uint256", "internalType": "uint256"}
+      {"name": "price", "type": "uint256", "internalType": "uint256"},
+      {"name": "artCategory", "type": "string", "internalType": "string"}
     ],
     "stateMutability": "view"
   },
@@ -58,6 +59,7 @@ const TICKET_FACTORY_ABI = [
       {"name": "purchasePrice", "type": "uint256", "internalType": "uint256"},
       {"name": "purchaseTimestamp", "type": "uint256", "internalType": "uint256"},
       {"name": "name", "type": "string", "internalType": "string"},
+      {"name": "artCategory", "type": "string", "internalType": "string"},
       {"name": "metadataURI", "type": "string", "internalType": "string"}
     ],
     "stateMutability": "view"
@@ -89,7 +91,7 @@ const TICKET_FACTORY_ABI = [
   }
 ] as const
 
-// EventFactory ABI for getting event details
+// EventFactory ABI for getting event details - matches deployed contract
 const EVENT_FACTORY_ABI = [
   {
     "type": "function",
@@ -106,7 +108,8 @@ const EVENT_FACTORY_ABI = [
           {"name": "eventDuration", "type": "uint256", "internalType": "uint256"},
           {"name": "reservePrice", "type": "uint256", "internalType": "uint256"},
           {"name": "metadataURI", "type": "string", "internalType": "string"},
-          {"name": "ticketFactoryAddress", "type": "address", "internalType": "address"},
+          {"name": "artCategory", "type": "string", "internalType": "string"},
+          {"name": "ticketKioskAddress", "type": "address", "internalType": "address"},
           {"name": "finalized", "type": "bool", "internalType": "bool"}
         ]
       }
@@ -120,7 +123,7 @@ export interface TicketPurchaseData {
   eventId: number
   ticketName: string
   purchasePrice: string
-  ticketFactoryAddress: string
+  ticketKioskAddress: string
   txHash: string
   creatorAddress: string
 }
@@ -141,45 +144,55 @@ export interface EventTicketSales {
   remainingTickets: number
   price: string
   eventId: number
-  ticketFactoryAddress: string
+  ticketKioskAddress: string
 }
 
 export class TicketPurchaseService {
   private publicClient: any
   private walletClient: any
+  private provider: any
 
   constructor(provider?: any) {
     console.log('TICKET_PURCHASE: Initializing TicketPurchaseService')
-    
-    // Create a public client for reading from the blockchain
-    this.publicClient = createPublicClient({
-      chain: seiTestnet,
-      transport: custom(provider?.transport || (typeof window !== 'undefined' ? window.ethereum : null))
-    })
-    
-    // Use the provider as wallet client if it's already a viem wallet client
-    if (provider && typeof provider.writeContract === 'function') {
-      console.log('TICKET_PURCHASE: Using provided wagmi wallet client')
-      this.walletClient = provider
-    } else if (provider) {
-      console.log('TICKET_PURCHASE: Creating wallet client from custom provider')
-      this.walletClient = createWalletClient({
+    this.provider = provider
+    // Don't create clients during construction to avoid SSR issues
+  }
+
+  private getPublicClient() {
+    if (!this.publicClient && typeof window !== 'undefined') {
+      this.publicClient = createPublicClient({
         chain: seiTestnet,
-        transport: custom(provider)
+        transport: custom(this.provider?.transport || window.ethereum || {} as any)
       })
-    } else {
-      console.warn('TICKET_PURCHASE: No provider provided to TicketPurchaseService')
     }
+    return this.publicClient
+  }
+
+  private getWalletClient() {
+    if (!this.walletClient && this.provider) {
+      // Use the provider as wallet client if it's already a viem wallet client
+      if (typeof this.provider.writeContract === 'function') {
+        console.log('TICKET_PURCHASE: Using provided wagmi wallet client')
+        this.walletClient = this.provider
+      } else {
+        console.log('TICKET_PURCHASE: Creating wallet client from custom provider')
+        this.walletClient = createWalletClient({
+          chain: seiTestnet,
+          transport: custom(this.provider)
+        })
+      }
+    }
+    return this.walletClient
   }
 
   /**
-   * Get event details and ticket factory address
+   * Get event details and ticket kiosk address
    */
   async getEventDetails(eventId: number) {
     console.log('TICKET_PURCHASE: Fetching event details for event ID:', eventId)
     
     try {
-      const eventData = await this.publicClient.readContract({
+      const eventData = await this.getPublicClient().readContract({
         address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
         abi: EVENT_FACTORY_ABI,
         functionName: 'getEvent',
@@ -188,7 +201,7 @@ export class TicketPurchaseService {
 
       console.log('TICKET_PURCHASE: Event details retrieved')
       console.log('TICKET_PURCHASE: Creator:', eventData.creator)
-      console.log('TICKET_PURCHASE: TicketFactory address:', eventData.ticketFactoryAddress)
+      console.log('TICKET_PURCHASE: TicketKiosk address:', eventData.ticketKioskAddress)
 
       return {
         creator: eventData.creator,
@@ -196,7 +209,7 @@ export class TicketPurchaseService {
         eventDuration: Number(eventData.eventDuration),
         reservePrice: formatEther(eventData.reservePrice),
         metadataURI: eventData.metadataURI,
-        ticketFactoryAddress: eventData.ticketFactoryAddress,
+        ticketKioskAddress: eventData.ticketKioskAddress,
         finalized: eventData.finalized
       }
     } catch (error) {
@@ -214,9 +227,9 @@ export class TicketPurchaseService {
     try {
       const eventDetails = await this.getEventDetails(eventId)
       
-      const salesInfo = await this.publicClient.readContract({
-        address: eventDetails.ticketFactoryAddress as `0x${string}`,
-        abi: TICKET_FACTORY_ABI,
+      const salesInfo = await this.getPublicClient().readContract({
+        address: eventDetails.ticketKioskAddress as `0x${string}`,
+        abi: TICKET_KIOSK_ABI,
         functionName: 'getSalesInfo'
       })
 
@@ -231,7 +244,7 @@ export class TicketPurchaseService {
         remainingTickets: Number(salesInfo[2]),
         price: formatEther(salesInfo[3]),
         eventId,
-        ticketFactoryAddress: eventDetails.ticketFactoryAddress
+        ticketKioskAddress: eventDetails.ticketKioskAddress
       }
     } catch (error) {
       console.error('TICKET_PURCHASE: Error getting sales info:', error)
@@ -248,9 +261,9 @@ export class TicketPurchaseService {
     try {
       const eventDetails = await this.getEventDetails(eventId)
       
-      const hasTicket = await this.publicClient.readContract({
-        address: eventDetails.ticketFactoryAddress as `0x${string}`,
-        abi: TICKET_FACTORY_ABI,
+      const hasTicket = await this.getPublicClient().readContract({
+        address: eventDetails.ticketKioskAddress as `0x${string}`,
+        abi: TICKET_KIOSK_ABI,
         functionName: 'hasTicketForEvent',
         args: [userAddress as `0x${string}`, BigInt(eventId)]
       })
@@ -268,7 +281,7 @@ export class TicketPurchaseService {
    * Includes automatic revenue distribution: 80% to creator, 20% to treasury
    */
   async purchaseTicket(eventId: number, userAddress: string): Promise<TicketPurchaseData> {
-    if (!this.walletClient) {
+    if (!this.getWalletClient()) {
       throw new Error('Wallet not connected')
     }
 
@@ -277,12 +290,12 @@ export class TicketPurchaseService {
     console.log('TICKET_PURCHASE: User address:', userAddress)
 
     try {
-      // Step 1: Get event details and ticket factory
+      // Step 1: Get event details and ticket kiosk
       console.log('TICKET_PURCHASE: Step 1 - Getting event details')
       const eventDetails = await this.getEventDetails(eventId)
-      const ticketFactoryAddress = eventDetails.ticketFactoryAddress
+      const ticketKioskAddress = eventDetails.ticketKioskAddress
 
-      console.log('TICKET_PURCHASE: TicketFactory address:', ticketFactoryAddress)
+      console.log('TICKET_PURCHASE: TicketKiosk address:', ticketKioskAddress)
       console.log('TICKET_PURCHASE: Event creator:', eventDetails.creator)
 
       // Step 2: Get sales info to know the ticket price
@@ -310,9 +323,9 @@ export class TicketPurchaseService {
 
       // Step 5: Simulate the ticket purchase
       console.log('TICKET_PURCHASE: Step 5 - Simulating ticket purchase transaction')
-      const { request } = await this.publicClient.simulateContract({
-        address: ticketFactoryAddress as `0x${string}`,
-        abi: TICKET_FACTORY_ABI,
+      const { request } = await this.getPublicClient().simulateContract({
+        address: ticketKioskAddress as `0x${string}`,
+        abi: TICKET_KIOSK_ABI,
         functionName: 'purchaseTicket',
         value: ticketPriceWei,
         account: userAddress as `0x${string}`
@@ -320,12 +333,12 @@ export class TicketPurchaseService {
 
       // Step 6: Execute the transaction
       console.log('TICKET_PURCHASE: Step 6 - Executing ticket purchase transaction')
-      const txHash = await this.walletClient.writeContract(request)
+      const txHash = await this.getWalletClient().writeContract(request)
       console.log('TICKET_PURCHASE: Transaction submitted with hash:', txHash)
 
       // Step 7: Wait for confirmation
       console.log('TICKET_PURCHASE: Step 7 - Waiting for transaction confirmation')
-      const receipt = await waitForTransaction(this.publicClient, txHash)
+      const receipt = await waitForTransaction(this.getPublicClient(), txHash)
       console.log('TICKET_PURCHASE: Transaction confirmed in block:', receipt.blockNumber.toString())
       console.log('TICKET_PURCHASE: Gas used:', receipt.gasUsed?.toString())
 
@@ -333,8 +346,8 @@ export class TicketPurchaseService {
       console.log('TICKET_PURCHASE: Step 8 - Parsing transaction logs for ticket ID')
       const ticketMintedLog = receipt.logs.find((log: any) => {
         try {
-          const decoded = this.publicClient.decodeEventLog({
-            abi: TICKET_FACTORY_ABI,
+          const decoded = this.getPublicClient().decodeEventLog({
+            abi: TICKET_KIOSK_ABI,
             data: log.data,
             topics: log.topics
           })
@@ -349,8 +362,8 @@ export class TicketPurchaseService {
 
       if (ticketMintedLog) {
         try {
-          const decoded = this.publicClient.decodeEventLog({
-            abi: TICKET_FACTORY_ABI,
+          const decoded = this.getPublicClient().decodeEventLog({
+            abi: TICKET_KIOSK_ABI,
             data: ticketMintedLog.data,
             topics: ticketMintedLog.topics
           })
@@ -365,7 +378,7 @@ export class TicketPurchaseService {
       }
 
       // Note: Revenue distribution (80% creator, 20% treasury) is handled automatically
-      // by the TicketFactory contract's purchaseTicket function
+      // by the TicketKiosk contract's purchaseTicket function
       console.log('TICKET_PURCHASE: Revenue distribution completed automatically by contract')
       console.log('TICKET_PURCHASE: - 80% to creator:', eventDetails.creator)
       console.log('TICKET_PURCHASE: - 20% to treasury:', CONTRACT_ADDRESSES.TreasuryReceiver)
@@ -377,7 +390,7 @@ export class TicketPurchaseService {
         eventId,
         ticketName,
         purchasePrice: salesInfo.price,
-        ticketFactoryAddress,
+        ticketKioskAddress,
         txHash,
         creatorAddress: eventDetails.creator
       }
@@ -397,9 +410,9 @@ export class TicketPurchaseService {
     try {
       const eventDetails = await this.getEventDetails(eventId)
       
-      const ticketIds = await this.publicClient.readContract({
-        address: eventDetails.ticketFactoryAddress as `0x${string}`,
-        abi: TICKET_FACTORY_ABI,
+      const ticketIds = await this.getPublicClient().readContract({
+        address: eventDetails.ticketKioskAddress as `0x${string}`,
+        abi: TICKET_KIOSK_ABI,
         functionName: 'getUserTickets',
         args: [userAddress as `0x${string}`]
       })
@@ -421,9 +434,9 @@ export class TicketPurchaseService {
     try {
       const eventDetails = await this.getEventDetails(eventId)
       
-      const ticketData = await this.publicClient.readContract({
-        address: eventDetails.ticketFactoryAddress as `0x${string}`,
-        abi: TICKET_FACTORY_ABI,
+      const ticketData = await this.getPublicClient().readContract({
+        address: eventDetails.ticketKioskAddress as `0x${string}`,
+        abi: TICKET_KIOSK_ABI,
         functionName: 'getTicketInfo',
         args: [BigInt(ticketId)]
       })
@@ -435,7 +448,7 @@ export class TicketPurchaseService {
         purchasePrice: formatEther(ticketData[3]),
         purchaseTimestamp: Number(ticketData[4]),
         name: ticketData[5],
-        metadataURI: ticketData[6]
+        metadataURI: ticketData[7]
       }
     } catch (error) {
       console.error('TICKET_PURCHASE: Error getting ticket info:', error)

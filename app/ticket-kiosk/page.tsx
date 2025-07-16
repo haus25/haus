@@ -7,8 +7,7 @@ import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card"
 import { ArtCategoryIcon } from "../components/categoryIcons"
-import { Search, Calendar, Clock, Users, Ticket, ChevronDown } from "lucide-react"
-import { CurationProposalModal } from "../components/curationProposal"
+import { Search, Calendar, Clock, Users, Ticket, ChevronDown, Loader2 } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../components/ui/dropdownMenu"
 import { Breadcrumbs } from "../components/breadcrumbs"
 import { RecentlyViewed } from "../components/recentlyViewed"
@@ -30,7 +29,7 @@ type Category =
 
 type SortOption = "date-earliest" | "date-latest" | "price-low-high" | "price-high-low"
 
-export default function EventMarket() {
+export default function TicketKiosk() {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState("")
   const [expandedCardId, setExpandedCardId] = useState<number | null>(null)
@@ -40,7 +39,7 @@ export default function EventMarket() {
   const [priceRange, setPriceRange] = useState({ min: 0, max: 50 })
   const [sortOption, setSortOption] = useState<SortOption>("date-earliest")
 
-  const { events } = useEvents()
+  const { events, loading, refreshEvents } = useEvents()
   const { userProfile, isConnected } = useAuth()
   const { data: walletClient } = useWalletClient()
 
@@ -55,9 +54,16 @@ export default function EventMarket() {
       return
     }
 
+    // Check if we have the contractEventId
+    if (typeof event.contractEventId !== 'number') {
+      toast.error("Event data not properly loaded. Please refresh the page.")
+      return
+    }
+
     try {
       console.log("TICKET_PURCHASE: Starting ticket purchase flow")
-      console.log("TICKET_PURCHASE: Event ID:", event.contractEventId || event.id)
+      console.log("TICKET_PURCHASE: Event ID:", event.contractEventId)
+      console.log("TICKET_PURCHASE: Event title:", event.title)
       console.log("TICKET_PURCHASE: User address:", userProfile.address)
 
       toast.loading("Initializing ticket purchase...")
@@ -65,10 +71,10 @@ export default function EventMarket() {
       // Create ticket purchase service
       const ticketService = createTicketPurchaseService(walletClient)
 
-      // Use contractEventId if available, otherwise fall back to id
-      const eventId = event.contractEventId || parseInt(event.id)
+      // Use the contractEventId from the real contract
+      const eventId = event.contractEventId
       
-      console.log("TICKET_PURCHASE: Using event ID:", eventId)
+      console.log("TICKET_PURCHASE: Using contract event ID:", eventId)
 
       // Check if user already has a ticket
       toast.loading("Checking ticket availability...")
@@ -107,6 +113,9 @@ export default function EventMarket() {
         Price: ${purchaseResult.purchasePrice} SEI
         Tx: ${purchaseResult.txHash.slice(0, 8)}...`
       )
+
+      // Refresh events to update participant counts
+      await refreshEvents()
 
     } catch (error: any) {
       console.error("TICKET_PURCHASE: Error during ticket purchase:", error)
@@ -213,10 +222,10 @@ export default function EventMarket() {
       <QuickAccess />
 
       <main className="flex-1 container py-12">
-        <Breadcrumbs items={[{ label: "Event Market" }]} />
+        <Breadcrumbs items={[{ label: "Ticket Kiosk" }]} />
 
         <div className="mb-12">
-          <h1 className="text-4xl font-bold mb-2">Event Market</h1>
+          <h1 className="text-4xl font-bold mb-2">Ticket Kiosk</h1>
           <p className="text-muted-foreground max-w-3xl">
             Discover and join upcoming live events. Purchase tickets to experience art in its creation and participate
             in the ownership of unique digital collectibles.
@@ -234,19 +243,38 @@ export default function EventMarket() {
             />
           </div>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="ml-4">
-                {getSortLabel(sortOption)} <ChevronDown className="ml-2 h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setSortOption("date-earliest")}>Date (Earliest)</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSortOption("date-latest")}>Date (Latest)</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSortOption("price-low-high")}>Price (Low to High)</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSortOption("price-high-low")}>Price (High to Low)</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="ml-4 flex items-center gap-2">
+            {loading && (
+              <div className="flex items-center text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Loading events...
+              </div>
+            )}
+            
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={refreshEvents}
+              disabled={loading}
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Refresh
+            </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  {getSortLabel(sortOption)} <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setSortOption("date-earliest")}>Date (Earliest)</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortOption("date-latest")}>Date (Latest)</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortOption("price-low-high")}>Price (Low to High)</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortOption("price-high-low")}>Price (High to Low)</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         <div className="flex flex-col md:flex-row gap-8">
@@ -338,95 +366,135 @@ export default function EventMarket() {
 
           {/* Events Grid */}
           <div className="flex-1">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredEvents.map((event) => (
-                <Card key={event.id} className="overflow-hidden hover:shadow-md transition-shadow">
-                  <div className="relative h-48">
-                    <img
-                      src={event.image || "/placeholder.svg"}
-                      alt={event.title}
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute top-2 right-2 bg-background/80 rounded-full p-1">
-                      <ArtCategoryIcon category={event.category as any} size="sm" className="text-primary" />
-                    </div>
-                  </div>
-                  <CardHeader className="p-4">
-                    <CardTitle className="text-lg">{event.title}</CardTitle>
-                    <CardDescription>by {event.creator}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="p-4 pt-0 space-y-2">
-                    <div className="flex items-center text-sm text-muted-foreground">
-                      <Calendar className="h-4 w-4 mr-2" />
-                      <span>{formatDate(event.date)}</span>
-                    </div>
-                    <div className="flex items-center text-sm text-muted-foreground">
-                      <Clock className="h-4 w-4 mr-2" />
-                      <span>{event.duration} minutes</span>
-                    </div>
-                    <div className="flex items-center text-sm text-muted-foreground">
-                      <Users className="h-4 w-4 mr-2" />
-                      <span>
-                        {event.participants}/{event.maxParticipants} participants
-                      </span>
-                    </div>
-                    <div className="flex items-center text-sm text-muted-foreground">
-                      <Ticket className="h-4 w-4 mr-2" />
-                      <span>{event.ticketPrice} SEI</span>
-                    </div>
-                  </CardContent>
-                  <CardFooter className="p-4 pt-0 flex justify-between">
-                    <Button variant="outline" size="sm" onClick={() => toggleCardExpansion(event.id)}>
-                      {expandedCardId === parseInt(event.id) ? "Hide Details" : "Details"}
-                    </Button>
-                    <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => handleBuyTicket(event)}>
-                      Buy Ticket
-                    </Button>
-                  </CardFooter>
-
-                  {/* Expanded Card Content */}
-                  {expandedCardId === parseInt(event.id) && (
-                    <div className="p-4 pt-0 border-t">
-                      <div className="mb-4">
-                        <h4 className="font-medium mb-2">Event Description</h4>
-                        <p className="text-sm text-muted-foreground">{event.description}</p>
-                      </div>
-
-                      <div className="space-y-4">
-                        <h4 className="font-medium">Curation</h4>
-                        <p className="text-sm text-muted-foreground mb-4">
-                          Propose to curate this event by offering your expertise to improve visibility, promotion, or
-                          visuals.
-                        </p>
-
-                        <Button className="w-full" variant="outline" onClick={() => openCurationModal(event)}>
-                          Propose to Curate
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </Card>
-              ))}
-            </div>
-
-            {filteredEvents.length === 0 && (
+            {loading ? (
               <div className="text-center py-12">
-                <h3 className="text-xl font-medium mb-2">No events found</h3>
-                <p className="text-muted-foreground">Try adjusting your search or category filters</p>
+                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+                <h3 className="text-xl font-medium mb-2">Loading Events</h3>
+                <p className="text-muted-foreground">Fetching real-time events from the blockchain...</p>
               </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredEvents.map((event) => (
+                    <Card key={event.id} className="overflow-hidden hover:shadow-md transition-shadow">
+                      <div className="relative h-48">
+                        <img
+                          src={event.image || "/placeholder.svg"}
+                          alt={event.title}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute top-2 right-2 bg-background/80 rounded-full p-1">
+                          <ArtCategoryIcon category={event.category as any} size="sm" className="text-primary" />
+                        </div>
+                        {/* Status badge */}
+                        <div className="absolute top-2 left-2 bg-background/80 rounded-full px-2 py-1">
+                          <span className={`text-xs font-medium ${
+                            event.status === 'live' ? 'text-red-500' : 
+                            event.status === 'completed' ? 'text-gray-500' : 'text-green-500'
+                          }`}>
+                            {event.status.toUpperCase()}
+                          </span>
+                        </div>
+                      </div>
+                      <CardHeader className="p-4">
+                        <CardTitle className="text-lg">{event.title}</CardTitle>
+                        <CardDescription>by {event.creator}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="p-4 pt-0 space-y-2">
+                        <div className="flex items-center text-sm text-muted-foreground">
+                          <Calendar className="h-4 w-4 mr-2" />
+                          <span>{formatDate(event.date)}</span>
+                        </div>
+                        <div className="flex items-center text-sm text-muted-foreground">
+                          <Clock className="h-4 w-4 mr-2" />
+                          <span>{event.duration} minutes</span>
+                        </div>
+                        <div className="flex items-center text-sm text-muted-foreground">
+                          <Users className="h-4 w-4 mr-2" />
+                          <span>
+                            {event.participants}/{event.maxParticipants} participants
+                          </span>
+                        </div>
+                        <div className="flex items-center text-sm text-muted-foreground">
+                          <Ticket className="h-4 w-4 mr-2" />
+                          <span>{event.ticketPrice} SEI</span>
+                        </div>
+                      </CardContent>
+                      <CardFooter className="p-4 pt-0 flex justify-between">
+                        <Button variant="outline" size="sm" onClick={() => toggleCardExpansion(event.id)}>
+                          {expandedCardId === parseInt(event.id) ? "Hide Details" : "Details"}
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          className="bg-primary text-primary-foreground hover:bg-primary/90" 
+                          onClick={() => handleBuyTicket(event)}
+                          disabled={event.status === 'completed' || event.participants >= event.maxParticipants}
+                        >
+                          {event.participants >= event.maxParticipants ? 'Sold Out' : 'Buy Ticket'}
+                        </Button>
+                      </CardFooter>
+
+                      {/* Expanded Card Content */}
+                      {expandedCardId === parseInt(event.id) && (
+                        <div className="p-4 pt-0 border-t">
+                          <div className="mb-4">
+                            <h4 className="font-medium mb-2">Event Description</h4>
+                            <p className="text-sm text-muted-foreground">{event.description}</p>
+                          </div>
+
+                          <div className="space-y-4">
+                            <div>
+                              <h4 className="font-medium mb-2">Contract Details</h4>
+                              <div className="text-xs text-muted-foreground space-y-1">
+                                <p>Event ID: {event.contractEventId}</p>
+                                <p>Creator: {event.creatorAddress.slice(0, 8)}...{event.creatorAddress.slice(-6)}</p>
+                                {event.ticketKioskAddress && (
+                                  <p>Ticket Kiosk: {event.ticketKioskAddress.slice(0, 8)}...{event.ticketKioskAddress.slice(-6)}</p>
+                                )}
+                                <p>Reserve Price: {event.reservePrice} SEI</p>
+                                <p>Status: {event.finalized ? 'Finalized' : 'Active'}</p>
+                              </div>
+                            </div>
+
+                            <div className="space-y-4">
+                              <h4 className="font-medium">Curation</h4>
+                              <p className="text-sm text-muted-foreground mb-4">
+                                Propose to curate this event by offering your expertise to improve visibility, promotion, or
+                                visuals.
+                              </p>
+
+                              <Button className="w-full" variant="outline" onClick={() => openCurationModal(event)}>
+                                Propose to Curate
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </Card>
+                  ))}
+                </div>
+
+                {!loading && filteredEvents.length === 0 && (
+                  <div className="text-center py-12">
+                    <h3 className="text-xl font-medium mb-2">No events found</h3>
+                    <p className="text-muted-foreground mb-4">
+                      {events.length === 0 
+                        ? "No events have been created yet. Be the first to create an event!"
+                        : "Try adjusting your search or category filters"
+                      }
+                    </p>
+                    {events.length === 0 && (
+                      <Button onClick={() => router.push('/event-factory')}>
+                        Create First Event
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
       </main>
-
-      {selectedEvent && (
-        <CurationProposalModal
-          isOpen={isCurationModalOpen}
-          onClose={() => setIsCurationModalOpen(false)}
-          eventId={selectedEvent.id}
-          eventTitle={selectedEvent.title}
-        />
-      )}
     </div>
   )
 }

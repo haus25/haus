@@ -617,11 +617,11 @@ export default function Profile() {
                           const isUpcoming = eventDate > now
                           
                           return (
-                            <div key={event.id} className="border rounded-lg p-4">
+                          <div key={event.id} className="border rounded-lg p-4">
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
                                   <div className="flex items-center gap-2 mb-2">
-                                    <h3 className="font-medium">{event.title}</h3>
+                            <h3 className="font-medium">{event.title}</h3>
                                     {isLive && (
                                       <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">
                                         LIVE
@@ -664,14 +664,14 @@ export default function Profile() {
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      onClick={() => router.push(`/event-market/${event.id}`)}
+                                      onClick={() => router.push(`/ticket-kiosk/${event.id}`)}
                                     >
                                       View Event
                                     </Button>
                                   )}
                                 </div>
                               </div>
-                            </div>
+                          </div>
                           )
                         })}
                       </div>
@@ -705,7 +705,7 @@ export default function Profile() {
                       <p className="text-muted-foreground">No tickets purchased yet</p>
                       <Button
                         className="mt-4"
-                        onClick={() => router.push("/event-market")}
+                        onClick={() => router.push("/ticket-kiosk")}
                       >
                         Browse Events
                       </Button>

@@ -14,7 +14,7 @@ import { useTimeFormatter } from "../hooks/hydration"
 
 interface UserTicket extends TicketInfo {
   ticketId: number
-  ticketFactoryAddress: string
+  ticketKioskAddress: string
   eventName: string
   eventStatus: string
   eventDate: number
@@ -45,7 +45,7 @@ export function UserTickets({ className }: UserTicketsProps) {
       console.log('USER_TICKETS: Fetching tickets for user:', userProfile.address)
       
       // TODO: Implement proper ticket fetching from contracts
-      // This would query the TicketFactory contracts to find all tickets owned by the user
+      // This would query the TicketKiosk contracts to find all tickets owned by the user
       // For now, we start with empty array - all data comes from chain
       
       // Example implementation:
@@ -121,7 +121,7 @@ export function UserTickets({ className }: UserTicketsProps) {
           <div className="text-center py-8">
             <Ticket className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <p className="text-muted-foreground mb-4">No tickets found</p>
-            <Button onClick={() => router.push("/event-market")}>
+            <Button onClick={() => router.push("/ticket-kiosk")}>
               Browse Events
             </Button>
           </div>
