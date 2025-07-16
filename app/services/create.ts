@@ -58,7 +58,7 @@ const EVENT_FACTORY_ABI = [
           {"name": "reservePrice", "type": "uint256", "internalType": "uint256"},
           {"name": "metadataURI", "type": "string", "internalType": "string"},
           {"name": "artCategory", "type": "string", "internalType": "string"},
-          {"name": "ticketKioskAddress", "type": "address", "internalType": "address"},
+          {"name": "KioskAddress", "type": "address", "internalType": "address"},
           {"name": "finalized", "type": "bool", "internalType": "bool"}
         ]
       }
@@ -388,21 +388,21 @@ export class EventFactoryService {
       console.log('CONTRACT_CALL: ✅ Final verification results:')
       console.log('CONTRACT_CALL: - Event ID:', expectedEventId)
       console.log('CONTRACT_CALL: - Creator address:', eventData.creator)
-      console.log('CONTRACT_CALL: - TicketKiosk address:', eventData.ticketKioskAddress)
+      console.log('CONTRACT_CALL: - TicketKiosk address:', eventData.KioskAddress)
       console.log('CONTRACT_CALL: - Event finalized:', eventData.finalized)
       console.log('CONTRACT_CALL: - Metadata URI:', eventData.metadataURI)
       console.log('CONTRACT_CALL: - Start date:', new Date(Number(eventData.startDate) * 1000).toISOString())
       console.log('CONTRACT_CALL: - Reserve price:', formatEther(eventData.reservePrice), 'SEI')
       
       // Verify TicketKiosk is properly deployed
-      if (eventData.ticketKioskAddress && eventData.ticketKioskAddress !== '0x0000000000000000000000000000000000000000') {
-        console.log('CONTRACT_CALL: ✅ TicketKiosk deployed successfully at:', eventData.ticketKioskAddress)
+      if (eventData.KioskAddress && eventData.KioskAddress !== '0x0000000000000000000000000000000000000000') {
+        console.log('CONTRACT_CALL: ✅ TicketKiosk deployed successfully at:', eventData.KioskAddress)
         ticketKioskDeployed = true
         
         // Test TicketKiosk is working
         try {
           const ticketKioskInfo = await this.getPublicClient().readContract({
-            address: eventData.ticketKioskAddress as `0x${string}`,
+            address: eventData.KioskAddress as `0x${string}`,
             abi: [{
               "type": "function",
               "name": "getSalesInfo",
@@ -440,10 +440,10 @@ export class EventFactoryService {
         creator: eventData.creator,
         startDate: Number(eventData.startDate),
         eventDuration: Number(eventData.eventDuration),
-        reservePrice: formatEther(eventData.reservePrice),
+        reservePrice: formatEther(BigInt(eventData.reservePrice.toString())),
         metadataURI: eventData.metadataURI,
         artCategory: eventData.artCategory,
-        ticketKioskAddress: eventData.ticketKioskAddress,
+        ticketKioskAddress: eventData.KioskAddress, // Note: property name is KioskAddress, not ticketKioskAddress
         txHash
       }
 
@@ -463,15 +463,16 @@ export class EventFactoryService {
         abi: EVENT_FACTORY_ABI,
         functionName: 'getEvent',
         args: [BigInt(eventId)]
-      })
+      }) as any
 
       return {
         creator: eventData.creator,
         startDate: Number(eventData.startDate),
         eventDuration: Number(eventData.eventDuration),
-        reservePrice: formatEther(eventData.reservePrice),
+        reservePrice: formatEther(BigInt(eventData.reservePrice.toString())),
         metadataURI: eventData.metadataURI,
-        ticketKioskAddress: eventData.ticketKioskAddress,
+        artCategory: eventData.artCategory,
+        ticketKioskAddress: eventData.KioskAddress, // Use correct property name
         finalized: eventData.finalized
       }
     } catch (error) {

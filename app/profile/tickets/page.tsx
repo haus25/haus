@@ -11,9 +11,15 @@ export default function ProfileTicketsPage() {
     router.replace("/profile?tab=tickets")
   }, [router])
 
+  // Return static content for SSR
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <p>Redirecting to your tickets...</p>
+      <div className="text-center">
+        <p className="text-lg font-medium">Redirecting to your tickets...</p>
+        <p className="text-sm text-muted-foreground mt-2">
+          If you are not redirected automatically, <a href="/profile?tab=tickets" className="text-primary underline">click here</a>
+        </p>
+      </div>
     </div>
   )
 } 

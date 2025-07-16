@@ -11,7 +11,6 @@ import { Web3InnovationGraphic } from "./components/web3Innovation"
 import { Eye, DollarSign, Zap, Clock, Sparkles, Layers } from "lucide-react"
 import { useAuth } from "./contexts/auth"
 import { LoginModal } from "./components/loginModal"
-import { WaitlistModal } from "./components/waitlist"
 import { HIDDEN_MESSAGE_1 } from "./lib/constants"
 
 // Lazy load components that aren't needed immediately
@@ -26,7 +25,6 @@ export default function Home() {
   const { isConnected, hasInviteAccess } = useAuth()
   const [showRtaModal, setShowRtaModal] = useState(false)
   const [showLoginModal, setShowLoginModal] = useState(false)
-  const [showWaitlistModal, setShowWaitlistModal] = useState(false)
   const [currentRedirectPath, setCurrentRedirectPath] = useState("/ticket-kiosk")
 
   const handleConnect = (redirectPath?: string) => {
@@ -34,14 +32,7 @@ export default function Home() {
     if (redirectPath) {
       setCurrentRedirectPath(redirectPath)
     }
-
-    if (hasInviteAccess) {
-      setShowLoginModal(true)
-    } else {
-      setShowWaitlistModal(true)
-    }
   }
-
   const handleLoginSuccess = () => {
     setShowLoginModal(false)
     router.push("/ticket-kiosk")
@@ -55,9 +46,6 @@ export default function Home() {
         setCurrentRedirectPath(path) // Store the path
         setShowLoginModal(true)
       }
-    } else {
-      setCurrentRedirectPath(path) // Store the path
-      setShowWaitlistModal(true)
     }
   }
 
@@ -328,12 +316,6 @@ export default function Home() {
       </main>
 
       <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} redirectPath={currentRedirectPath} />
-
-      <WaitlistModal
-        isOpen={showWaitlistModal}
-        onClose={() => setShowWaitlistModal(false)}
-        redirectPath={currentRedirectPath}
-      />
 
       {showRtaModal && (
         <Suspense fallback={<LoadingFallback />}>

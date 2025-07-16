@@ -55,18 +55,32 @@ export default function EventRoom() {
   // Load event data from blockchain
   useEffect(() => {
     const loadEventData = async () => {
-      if (!eventId || !walletClient) return
+      if (!eventId) return
 
       try {
         setIsLoadingEvent(true)
         console.log('EVENT_ROOM: Loading event data for ID:', eventId)
 
-        const eventService = createEventFactoryService(walletClient)
-        const eventDetails = await eventService.getEventDetails(parseInt(eventId))
+        // Fetch all events and find the one matching the ID
+        const { fetchOnChainEvents } = await import('../services/onChainEvents')
+        const events = await fetchOnChainEvents()
+        const targetEvent = events.find(e => e.contractEventId === parseInt(eventId))
 
-        console.log('EVENT_ROOM: Event details loaded:', eventDetails)
+        if (!targetEvent) {
+          console.error('EVENT_ROOM: Event not found for ID:', eventId)
+          setEventData({
+            id: eventId,
+            title: `Event #${eventId}`,
+            expired: true,
+            message: 'Event not found'
+          })
+          setIsLoadingEvent(false)
+          return
+        }
 
-        // Check event availability first
+        console.log('EVENT_ROOM: Event details loaded:', targetEvent)
+
+        // Check event availability from backend
         const { streamingService } = await import('../services/streaming')
         const availability = await streamingService.checkEventAvailability(eventId)
         
@@ -76,7 +90,7 @@ export default function EventRoom() {
           // Event has ended, show expired message
           setEventData({
             id: eventId,
-            title: `Event #${eventId}`,
+            title: targetEvent.title,
             expired: true,
             message: availability.message
           })
@@ -84,43 +98,34 @@ export default function EventRoom() {
           return
         }
 
-         // Fetch metadata from IPFS if available
-         let eventMetadata: any = {}
-         if (eventDetails.metadataURI) {
-           try {
-             const metadataResponse = await fetch(eventDetails.metadataURI)
-             if (metadataResponse.ok) {
-               eventMetadata = await metadataResponse.json()
-             }
-           } catch (error) {
-             console.warn('EVENT_ROOM: Could not load event metadata:', error)
-           }
-         }
-
-         const eventData = {
-           id: eventId,
-           contractEventId: eventId,
-           creator: eventDetails.creator,
-           startDate: eventDetails.startDate * 1000, // Convert to milliseconds
-           eventDuration: eventDetails.eventDuration, // in seconds
-           reservePrice: eventDetails.reservePrice,
-           metadataURI: eventDetails.metadataURI,
-           ticketKioskAddress: eventDetails.ticketKioskAddress,
-           finalized: eventDetails.finalized,
-           // From metadata
-           title: eventMetadata?.title || `Event #${eventId}`,
-           description: eventMetadata?.description || '',
-           category: eventMetadata?.category || 'general',
-           image: eventMetadata?.image || '',
-           // Availability info
-           available: availability.available,
-           isActive: availability.isActive,
-           hasEnded: availability.hasEnded,
-           ...eventMetadata
-         }
+        // Build complete event data
+        const eventData = {
+          id: eventId,
+          contractEventId: parseInt(eventId),
+          creator: targetEvent.creator,
+          creatorAddress: targetEvent.creatorAddress,
+          startDate: new Date(targetEvent.date).getTime(), // Convert to milliseconds
+          eventDuration: targetEvent.duration * 60, // Convert minutes to seconds for consistency
+          reservePrice: targetEvent.reservePrice,
+          metadataURI: targetEvent.eventMetadataURI,
+          ticketKioskAddress: targetEvent.ticketKioskAddress,
+          finalized: targetEvent.finalized,
+          // From event data
+          title: targetEvent.title,
+          description: targetEvent.description,
+          category: targetEvent.category,
+          image: targetEvent.image,
+          // Availability info
+          available: availability.available,
+          isActive: availability.isActive,
+          hasEnded: availability.hasEnded,
+          ticketPrice: targetEvent.ticketPrice,
+          maxParticipants: targetEvent.maxParticipants,
+          participants: targetEvent.participants,
+          status: targetEvent.status
+        }
 
         setEventData(eventData)
-
         console.log('EVENT_ROOM: Event data set:', eventData)
 
       } catch (error) {
@@ -132,7 +137,7 @@ export default function EventRoom() {
     }
 
     loadEventData()
-  }, [eventId, walletClient])
+  }, [eventId])
 
   // Initialize chat with welcome message
   useEffect(() => {

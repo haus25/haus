@@ -285,105 +285,90 @@ export class TicketPurchaseService {
       throw new Error('Wallet not connected')
     }
 
-    console.log('TICKET_PURCHASE: Starting ticket purchase process')
+    console.log('TICKET_PURCHASE: Starting optimized ticket purchase process')
     console.log('TICKET_PURCHASE: Event ID:', eventId)
     console.log('TICKET_PURCHASE: User address:', userAddress)
 
     try {
-      // Step 1: Get event details and ticket kiosk
+      // Step 1: Get event details and validate ticket kiosk exists
       console.log('TICKET_PURCHASE: Step 1 - Getting event details')
       const eventDetails = await this.getEventDetails(eventId)
       const ticketKioskAddress = eventDetails.ticketKioskAddress
 
-      console.log('TICKET_PURCHASE: TicketKiosk address:', ticketKioskAddress)
-      console.log('TICKET_PURCHASE: Event creator:', eventDetails.creator)
+      if (!ticketKioskAddress || ticketKioskAddress === '0x0000000000000000000000000000000000000000') {
+        throw new Error('TicketKiosk not deployed for this event')
+      }
 
-      // Step 2: Get sales info to know the ticket price
-      console.log('TICKET_PURCHASE: Step 2 - Getting ticket sales info')
+      console.log('TICKET_PURCHASE: TicketKiosk address:', ticketKioskAddress)
+
+      // Step 2: Get sales info in a single call
+      console.log('TICKET_PURCHASE: Step 2 - Getting sales info and validating availability')
       const salesInfo = await this.getTicketSalesInfo(eventId)
       
       if (salesInfo.remainingTickets <= 0) {
         throw new Error('No tickets available - event is sold out')
       }
 
+      const ticketPriceWei = parseEther(salesInfo.price)
       console.log('TICKET_PURCHASE: Ticket price:', salesInfo.price, 'SEI')
       console.log('TICKET_PURCHASE: Remaining tickets:', salesInfo.remainingTickets)
 
-      // Step 3: Check if user already has a ticket
-      console.log('TICKET_PURCHASE: Step 3 - Checking if user already has ticket')
-      const alreadyHasTicket = await this.userHasTicket(eventId, userAddress)
-      
-      if (alreadyHasTicket) {
-        throw new Error('You already have a ticket for this event')
-      }
+      // Step 3: Execute purchase directly with minimal pre-checks
+      // The contract will handle validation (duplicate ticket, sold out, etc.)
+      console.log('TICKET_PURCHASE: Step 3 - Executing purchase transaction')
+      console.log('TICKET_PURCHASE: Payment amount:', formatEther(ticketPriceWei), 'SEI')
 
-      // Step 4: Calculate payment amount
-      const ticketPriceWei = parseEther(salesInfo.price)
-      console.log('TICKET_PURCHASE: Step 4 - Payment amount:', formatEther(ticketPriceWei), 'SEI')
-
-      // Step 5: Simulate the ticket purchase
-      console.log('TICKET_PURCHASE: Step 5 - Simulating ticket purchase transaction')
-      const { request } = await this.getPublicClient().simulateContract({
+      // Execute purchase without simulation to reduce RPC calls
+      const txHash = await this.getWalletClient().writeContract({
         address: ticketKioskAddress as `0x${string}`,
         abi: TICKET_KIOSK_ABI,
         functionName: 'purchaseTicket',
         value: ticketPriceWei,
         account: userAddress as `0x${string}`
       })
-
-      // Step 6: Execute the transaction
-      console.log('TICKET_PURCHASE: Step 6 - Executing ticket purchase transaction')
-      const txHash = await this.getWalletClient().writeContract(request)
+      
       console.log('TICKET_PURCHASE: Transaction submitted with hash:', txHash)
 
-      // Step 7: Wait for confirmation
-      console.log('TICKET_PURCHASE: Step 7 - Waiting for transaction confirmation')
+      // Step 4: Wait for confirmation
+      console.log('TICKET_PURCHASE: Step 4 - Waiting for transaction confirmation')
       const receipt = await waitForTransaction(this.getPublicClient(), txHash)
       console.log('TICKET_PURCHASE: Transaction confirmed in block:', receipt.blockNumber.toString())
-      console.log('TICKET_PURCHASE: Gas used:', receipt.gasUsed?.toString())
 
-      // Step 8: Parse the TicketMinted event to get ticket ID
-      console.log('TICKET_PURCHASE: Step 8 - Parsing transaction logs for ticket ID')
-      const ticketMintedLog = receipt.logs.find((log: any) => {
-        try {
-          const decoded = this.getPublicClient().decodeEventLog({
-            abi: TICKET_KIOSK_ABI,
-            data: log.data,
-            topics: log.topics
-          })
-          return decoded.eventName === 'TicketMinted'
-        } catch {
-          return false
-        }
-      })
-
-      let ticketId = 1 // fallback
+      // Step 5: Parse ticket details from transaction logs
+      console.log('TICKET_PURCHASE: Step 5 - Parsing transaction logs for ticket details')
+      let ticketId = 1
       let ticketName = `rta${eventId}_ticket${ticketId}`
 
-      if (ticketMintedLog) {
-        try {
+      try {
+        const ticketMintedLog = receipt.logs.find((log: any) => {
+          try {
+            const decoded = this.getPublicClient().decodeEventLog({
+              abi: TICKET_KIOSK_ABI,
+              data: log.data,
+              topics: log.topics
+            })
+            return decoded.eventName === 'TicketMinted'
+          } catch {
+            return false
+          }
+        })
+
+        if (ticketMintedLog) {
           const decoded = this.getPublicClient().decodeEventLog({
             abi: TICKET_KIOSK_ABI,
             data: ticketMintedLog.data,
             topics: ticketMintedLog.topics
           })
           ticketId = Number(decoded.args.ticketId)
-          ticketName = decoded.args.ticketName
-          console.log('TICKET_PURCHASE: Ticket minted successfully')
-          console.log('TICKET_PURCHASE: Ticket ID:', ticketId)
-          console.log('TICKET_PURCHASE: Ticket name:', ticketName)
-        } catch (error) {
-          console.warn('TICKET_PURCHASE: Could not decode TicketMinted event, using fallback values')
+          ticketName = decoded.args.ticketName as string
+          console.log('TICKET_PURCHASE: Ticket minted - ID:', ticketId, 'Name:', ticketName)
         }
+      } catch (error) {
+        console.warn('TICKET_PURCHASE: Could not parse ticket details from logs, using defaults')
       }
 
-      // Note: Revenue distribution (80% creator, 20% treasury) is handled automatically
-      // by the TicketKiosk contract's purchaseTicket function
-      console.log('TICKET_PURCHASE: Revenue distribution completed automatically by contract')
-      console.log('TICKET_PURCHASE: - 80% to creator:', eventDetails.creator)
-      console.log('TICKET_PURCHASE: - 20% to treasury:', CONTRACT_ADDRESSES.TreasuryReceiver)
-
-      console.log('TICKET_PURCHASE: Ticket purchase completed successfully')
+      console.log('TICKET_PURCHASE: Purchase completed successfully')
+      console.log('TICKET_PURCHASE: Revenue distribution handled by contract (80% creator, 20% treasury)')
 
       return {
         ticketId,
@@ -396,7 +381,7 @@ export class TicketPurchaseService {
       }
 
     } catch (error) {
-      console.error('TICKET_PURCHASE: Error during ticket purchase process:', error)
+      console.error('TICKET_PURCHASE: Error during ticket purchase:', error)
       throw error
     }
   }

@@ -18,9 +18,14 @@ import {
   Heart,
   Share2,
   Ticket,
-  ArrowLeft
+  ArrowLeft,
+  Loader2
 } from "lucide-react"
 import { toast } from "sonner"
+import { fetchOnChainEvents, type OnChainEventData } from "../../services/onChainEvents"
+import { useAuth } from "../../contexts/auth"
+import { useWalletClient } from 'wagmi'
+import { createTicketPurchaseService } from "../../services/buyTicket"
 
 interface EventDetailPageProps {
   params: {
@@ -30,40 +35,106 @@ interface EventDetailPageProps {
 
 export default function EventDetailPage({ params }: EventDetailPageProps) {
   const router = useRouter()
-  const [event, setEvent] = useState<any>(null)
+  const { userProfile, isConnected } = useAuth()
+  const { data: walletClient } = useWalletClient()
+  const [event, setEvent] = useState<OnChainEventData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isFavorited, setIsFavorited] = useState(false)
 
   useEffect(() => {
-    // Mock event data - in production, fetch from API
-    const mockEvent = {
-      id: params.id,
-      title: `Event ${params.id}`,
-      description: "This is a mock event description. In production, this would be fetched from your API based on the event ID.",
-      category: "standup-comedy",
-      date: "2024-02-15T20:00:00Z",
-      location: "Comedy Club Downtown",
-      price: "25.00",
-      maxAttendees: 100,
-      currentAttendees: 42,
-      creator: {
-        name: "John Doe",
-        avatar: "/placeholder-user.jpg",
-        verified: true
-      },
-      image: "/placeholder.jpg",
-      tags: ["comedy", "live", "entertainment"]
+    const loadEventData = async () => {
+      try {
+        console.log('TICKET_DETAIL: Loading event data for ID:', params.id)
+        
+        // Fetch all events and find the one matching the ID
+        const events = await fetchOnChainEvents()
+        const targetEvent = events.find(e => e.contractEventId === parseInt(params.id))
+        
+        if (targetEvent) {
+          setEvent(targetEvent)
+          console.log('TICKET_DETAIL: Event found:', targetEvent.title)
+        } else {
+          console.error('TICKET_DETAIL: Event not found for ID:', params.id)
+          toast.error('Event not found')
+        }
+      } catch (error) {
+        console.error('TICKET_DETAIL: Error loading event:', error)
+        toast.error('Failed to load event details')
+      } finally {
+        setIsLoading(false)
+      }
     }
 
-    // Simulate API call
-    setTimeout(() => {
-      setEvent(mockEvent)
-      setIsLoading(false)
-    }, 1000)
+    loadEventData()
   }, [params.id])
 
-  const handlePurchaseTicket = () => {
-    toast.success("Ticket purchase functionality will be implemented here. This would integrate with the TicketKiosk contract to purchase tickets using the event's specific TicketKiosk address.")
+  const handlePurchaseTicket = async () => {
+    if (!isConnected || !userProfile || !event) {
+      toast.error("Please connect your wallet to purchase tickets")
+      return
+    }
+
+    if (!walletClient) {
+      toast.error("Wallet not available")
+      return
+    }
+
+    try {
+      console.log("TICKET_PURCHASE: Starting ticket purchase flow for event", event.contractEventId)
+      toast.loading("Initializing ticket purchase...")
+
+      // Create ticket purchase service
+      const ticketService = createTicketPurchaseService(walletClient)
+
+      // Check if user already has a ticket
+      const alreadyHasTicket = await ticketService.userHasTicket(event.contractEventId, userProfile.address)
+      
+      if (alreadyHasTicket) {
+        toast.error("You already have a ticket for this event!")
+        return
+      }
+
+      // Get sales info to show user the current status
+      const salesInfo = await ticketService.getTicketSalesInfo(event.contractEventId)
+      
+      if (salesInfo.remainingTickets <= 0) {
+        toast.error("Sorry, this event is sold out!")
+        return
+      }
+
+      toast.loading(`Purchasing ticket for ${salesInfo.price} SEI...`)
+
+      // Execute the purchase
+      const purchaseResult = await ticketService.purchaseTicket(event.contractEventId, userProfile.address)
+
+      toast.success(
+        `Ticket purchased successfully! 
+        Ticket: ${purchaseResult.ticketName}
+        Price: ${purchaseResult.purchasePrice} SEI`
+      )
+
+      // Redirect to profile to see the ticket
+      setTimeout(() => {
+        router.push('/profile?tab=tickets')
+      }, 2000)
+
+    } catch (error: any) {
+      console.error("TICKET_PURCHASE: Error during ticket purchase:", error)
+      
+      let errorMessage = error.message || "Failed to purchase ticket"
+      
+      if (errorMessage.includes("insufficient")) {
+        errorMessage = "Insufficient funds to purchase ticket"
+      } else if (errorMessage.includes("sold out") || errorMessage.includes("All tickets sold")) {
+        errorMessage = "This event is sold out"
+      } else if (errorMessage.includes("already")) {
+        errorMessage = "You already have a ticket for this event"
+      } else if (errorMessage.includes("rejected") || errorMessage.includes("denied")) {
+        errorMessage = "Transaction was cancelled"
+      }
+
+      toast.error(errorMessage)
+    }
   }
 
   const handleFavorite = () => {
@@ -150,8 +221,8 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                           {new Date(event.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                         </div>
                         <div className="flex items-center">
-                          <MapPin className="h-4 w-4 mr-1" />
-                          {event.location}
+                          <Users className="h-4 w-4 mr-1" />
+                          {event.participants}/{event.maxParticipants} attendees
                         </div>
                       </div>
                     </div>
@@ -178,11 +249,9 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                     <Badge variant="secondary" className="capitalize">
                       {event.category.replace('-', ' ')}
                     </Badge>
-                    {event.tags.map((tag: string) => (
-                      <Badge key={tag} variant="outline">
-                        {tag}
-                      </Badge>
-                    ))}
+                    <Badge variant="outline">
+                      {event.status}
+                    </Badge>
                   </div>
 
                   <div className="space-y-4">
@@ -203,15 +272,12 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
               <CardContent>
                 <div className="flex items-center space-x-4">
                   <Avatar className="h-12 w-12">
-                    <AvatarImage src={event.creator.avatar} alt={event.creator.name} />
-                    <AvatarFallback>{event.creator.name.slice(0, 2)}</AvatarFallback>
+                    <AvatarFallback>{event.creator.slice(0, 2).toUpperCase()}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1">
                     <div className="flex items-center space-x-2">
-                      <h4 className="font-medium">{event.creator.name}</h4>
-                      {event.creator.verified && (
-                        <Badge variant="default" className="text-xs">Verified</Badge>
-                      )}
+                      <h4 className="font-medium">{event.creator.slice(0, 8)}...{event.creator.slice(-6)}</h4>
+                      <Badge variant="default" className="text-xs">Creator</Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
                       Event organizer
@@ -237,19 +303,19 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="text-center">
-                  <div className="text-3xl font-bold">${event.price}</div>
+                  <div className="text-3xl font-bold">{event.ticketPrice} SEI</div>
                   <p className="text-sm text-muted-foreground">per ticket</p>
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span>Available:</span>
-                    <span>{event.maxAttendees - event.currentAttendees} / {event.maxAttendees}</span>
+                    <span>{event.maxParticipants - event.participants} / {event.maxParticipants}</span>
                   </div>
                   <div className="w-full bg-muted rounded-full h-2">
                     <div 
                       className="bg-primary h-2 rounded-full transition-all"
-                      style={{ width: `${(event.currentAttendees / event.maxAttendees) * 100}%` }}
+                      style={{ width: `${(event.participants / event.maxParticipants) * 100}%` }}
                     />
                   </div>
                 </div>
@@ -258,9 +324,10 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                   className="w-full" 
                   size="lg"
                   onClick={handlePurchaseTicket}
+                  disabled={event.participants >= event.maxParticipants || event.status === 'completed'}
                 >
                   <Ticket className="h-4 w-4 mr-2" />
-                  Purchase Ticket
+                  {event.participants >= event.maxParticipants ? 'Sold Out' : 'Purchase Ticket'}
                 </Button>
 
                 <p className="text-xs text-muted-foreground text-center">
@@ -280,21 +347,21 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                     <Users className="h-4 w-4 mr-2 text-muted-foreground" />
                     <span className="text-sm">Attendees</span>
                   </div>
-                  <span className="font-medium">{event.currentAttendees}</span>
+                  <span className="font-medium">{event.participants}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
                     <DollarSign className="h-4 w-4 mr-2 text-muted-foreground" />
                     <span className="text-sm">Price</span>
                   </div>
-                  <span className="font-medium">${event.price}</span>
+                  <span className="font-medium">{event.ticketPrice} SEI</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">
-                    <MapPin className="h-4 w-4 mr-2 text-muted-foreground" />
-                    <span className="text-sm">Location</span>
+                    <Clock className="h-4 w-4 mr-2 text-muted-foreground" />
+                    <span className="text-sm">Duration</span>
                   </div>
-                  <span className="font-medium text-right">{event.location}</span>
+                  <span className="font-medium text-right">{event.duration} minutes</span>
                 </div>
               </CardContent>
             </Card>

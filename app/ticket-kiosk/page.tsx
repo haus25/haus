@@ -395,6 +395,10 @@ export default function TicketKiosk() {
                             {event.status.toUpperCase()}
                           </span>
                         </div>
+                        {/* Progressive ID Badge */}
+                        <div className="absolute bottom-2 right-2 bg-black/70 text-white px-2 py-1 rounded-md text-xs font-mono">
+                          #{event.contractEventId}
+                        </div>
                       </div>
                       <CardHeader className="p-4">
                         <CardTitle className="text-lg">{event.title}</CardTitle>

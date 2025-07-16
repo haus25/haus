@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation"
 import { Button } from "./ui/button"
 import { Clock, Compass, HelpCircle, Plus, Ticket } from "lucide-react"
 import { useAuth } from "../contexts/auth"
-import { WaitlistModal } from "./waitlist"
 import { LoginModal } from "./loginModal"
 
 // Lazy load the RTA info modal
@@ -18,7 +17,6 @@ export function QuickAccess() {
   const [isExpanded, setIsExpanded] = useState(false)
   const { isConnected, hasInviteAccess } = useAuth()
   const router = useRouter()
-  const [showWaitlistModal, setShowWaitlistModal] = useState(false)
   const [showLoginModal, setShowLoginModal] = useState(false)
   const [showRtaModal, setShowRtaModal] = useState(false)
   const [redirectPath, setRedirectPath] = useState("")
@@ -33,7 +31,6 @@ export function QuickAccess() {
       }
     } else {
       setRedirectPath(path)
-      setShowWaitlistModal(true)
     }
   }
 
@@ -97,12 +94,6 @@ export function QuickAccess() {
           <span className="sr-only">Quick Access</span>
         </Button>
       </div>
-
-      <WaitlistModal
-        isOpen={showWaitlistModal}
-        onClose={() => setShowWaitlistModal(false)}
-        redirectPath={redirectPath}
-      />
 
       <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} redirectPath={redirectPath} />
 

@@ -1,258 +1,100 @@
 "use client"
 
-import type React from "react"
-
-import { useState, useRef, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Navbar } from "../components/navbar"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "../components/ui/card"
 import { Button } from "../components/ui/button"
-import { Input } from "../components/ui/input"
-import { Textarea } from "../components/ui/textarea"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar"
-import { Label } from "../components/ui/label"
-import { ArtCategoryIcon } from "../components/categoryIcons"
-import {
-  Brush,
-  Ticket,
-  Settings,
-  Wallet,
-  Edit,
-  Calendar,
-  Clock,
-  Users,
-  DollarSign,
-  Twitter,
-  Send,
-  Camera,
-  ImageIcon,
-  Check,
-  PlusCircle,
-  User,
-  Loader2,
-  RefreshCw,
-  Video,
-} from "lucide-react"
-import { QuickAccess } from "../components/quickAccess"
+import { Badge } from "../components/ui/badge"
 import { Breadcrumbs } from "../components/breadcrumbs"
+import { QuickAccess } from "../components/quickAccess"
+import { User, Calendar, Ticket, Settings, Loader2, RefreshCw } from "lucide-react"
 import { useAuth } from "../contexts/auth"
 import { useEvents } from "../contexts/events"
-import { SUPPORTED_SOCIAL_PLATFORMS, type SocialPlatform } from "../lib/constants"
-import { toast } from "sonner"
+import { fetchUserTickets } from "../services/onChainEvents"
 
-export default function Profile() {
+export default function ProfilePage() {
   const router = useRouter()
-  const { 
-    userProfile, 
-    walletStats, 
-    updateProfile, 
-    uploadAvatar, 
-    uploadBanner, 
-    refreshWalletData,
-    isLoading 
-  } = useAuth()
-  const { userEvents } = useEvents()
-  
-  const [editMode, setEditMode] = useState(false)
-  const [isUpdating, setIsUpdating] = useState(false)
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
-  const [isUploadingBanner, setIsUploadingBanner] = useState(false)
-  
-  // Initialize profile data from auth context
-  const [profileData, setProfileData] = useState({
-    displayName: userProfile?.displayName || userProfile?.name || "",
-    bio: userProfile?.bio || "",
-    avatar: userProfile?.avatar || "",
-    banner: userProfile?.banner || "",
-    socials: userProfile?.socials || {},
-  })
-  
-  const [selectedCategories, setSelectedCategories] = useState<string[]>(
-    userProfile?.preferences || []
-  )
-  const [activeTab, setActiveTab] = useState("events")
+  const searchParams = useSearchParams()
+  const { userProfile, isConnected } = useAuth()
+  const { events, loading: eventsLoading } = useEvents()
+  const [activeTab, setActiveTab] = useState("overview")
+  const [userTickets, setUserTickets] = useState<any[]>([])
+  const [ticketsLoading, setTicketsLoading] = useState(false)
 
-  const avatarInputRef = useRef<HTMLInputElement>(null)
-  const bannerInputRef = useRef<HTMLInputElement>(null)
-
-  // Handle tab from URL parameters
+  // Get active tab from URL parameters
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search)
-      const tab = urlParams.get('tab')
-      if (tab && ['events', 'tickets', 'favorites'].includes(tab)) {
-        setActiveTab(tab)
-      }
+    const tab = searchParams.get("tab")
+    if (tab && ["overview", "events", "tickets", "settings"].includes(tab)) {
+      setActiveTab(tab)
     }
-  }, [])
+  }, [searchParams])
 
-  // Update local state when userProfile changes
+  // Fetch user tickets when profile loads
   useEffect(() => {
-    if (userProfile) {
-      setProfileData({
-        displayName: userProfile.displayName || userProfile.name || "",
-        bio: userProfile.bio || "",
-        avatar: userProfile.avatar || "",
-        banner: userProfile.banner || "",
-        socials: userProfile.socials || {},
-      })
-      setSelectedCategories(userProfile.preferences || [])
+    if (isConnected && userProfile?.address) {
+      loadUserTickets()
     }
-  }, [userProfile])
+  }, [isConnected, userProfile?.address])
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-  }
-
-  const handleAvatarUpload = () => {
-    if (avatarInputRef.current) {
-      avatarInputRef.current.click()
-    }
-  }
-
-  const handleBannerUpload = () => {
-    if (bannerInputRef.current) {
-      bannerInputRef.current.click()
-    }
-  }
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, type: "avatar" | "banner") => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-      
-      // Validate file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error("File size must be less than 5MB")
-        return
-      }
-
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        toast.error("Please select an image file")
-        return
-      }
-
-      try {
-        if (type === "avatar") {
-          setIsUploadingAvatar(true)
-          const imageUrl = await uploadAvatar(file)
-          setProfileData({ ...profileData, avatar: imageUrl })
-          toast.success("Avatar updated successfully!")
-        } else {
-          setIsUploadingBanner(true)
-          const imageUrl = await uploadBanner(file)
-          setProfileData({ ...profileData, banner: imageUrl })
-          toast.success("Banner updated successfully!")
-        }
-      } catch (error) {
-        console.error(`Failed to upload ${type}:`, error)
-        toast.error(`Failed to upload ${type}. Please try again.`)
-      } finally {
-        if (type === "avatar") {
-          setIsUploadingAvatar(false)
-        } else {
-          setIsUploadingBanner(false)
-        }
-      }
-    }
-  }
-
-  const handleSaveProfile = async () => {
+  const loadUserTickets = async () => {
+    if (!userProfile?.address) return
+    
+    setTicketsLoading(true)
     try {
-      setIsUpdating(true)
-      
-      await updateProfile({
-        displayName: profileData.displayName,
-        bio: profileData.bio,
-        socials: profileData.socials,
-        preferences: selectedCategories,
-        isProfileComplete: true,
-      })
-      
-      setEditMode(false)
-      toast.success("Profile updated successfully!")
+      console.log('PROFILE: Fetching tickets for user:', userProfile.address)
+      const tickets = await fetchUserTickets(userProfile.address)
+      setUserTickets(tickets)
+      console.log('PROFILE: Found', tickets.length, 'tickets')
     } catch (error) {
-      console.error("Failed to save profile:", error)
-      toast.error("Failed to update profile. Please try again.")
+      console.error('PROFILE: Error fetching user tickets:', error)
     } finally {
-      setIsUpdating(false)
+      setTicketsLoading(false)
     }
   }
 
-  const handleCategoryToggle = (category: string) => {
-    setSelectedCategories((prev) =>
-      prev.includes(category) ? prev.filter((c) => c !== category) : prev.length < 3 ? [...prev, category] : prev,
-    )
+  // Update URL when tab changes
+  const handleTabChange = (value: string) => {
+    setActiveTab(value)
+    const url = new URL(window.location.href)
+    url.searchParams.set("tab", value)
+    router.replace(url.pathname + url.search)
   }
 
-  const handleSaveBio = async () => {
-    try {
-      await updateProfile({
-        bio: profileData.bio,
-        isProfileComplete: true,
-      })
-      toast.success("Bio updated!")
-    } catch (error) {
-      toast.error("Failed to update bio")
-    }
-  }
-
-  const handleSaveCategories = async () => {
-    try {
-      await updateProfile({
-        preferences: selectedCategories,
-        isProfileComplete: true,
-      })
-      toast.success("Preferences saved!")
-    } catch (error) {
-      toast.error("Failed to save preferences")
-    }
-  }
-
-  const handleSocialChange = (platform: SocialPlatform, value: string) => {
-    setProfileData({
-      ...profileData,
-      socials: {
-        ...profileData.socials,
-        [platform]: value,
-      },
-    })
-  }
-
-  const handleRefreshWallet = async () => {
-    try {
-      await refreshWalletData()
-      toast.success("Wallet data refreshed!")
-    } catch (error) {
-      toast.error("Failed to refresh wallet data")
-    }
-  }
-
-  // Check if profile needs completion
-  const isProfileIncomplete = !userProfile?.isProfileComplete
-
-  // Show loading state if no user profile yet
-  if (!userProfile) {
+  if (!isConnected || !userProfile) {
     return (
       <div className="min-h-screen flex flex-col texture-bg">
         <Navbar />
         <QuickAccess />
-        <main className="flex-1 container py-12 flex items-center justify-center">
-          <div className="text-center">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-            <p className="text-muted-foreground">Loading profile...</p>
-          </div>
+        <main className="flex-1 flex items-center justify-center">
+          <Card className="max-w-md text-center">
+            <CardHeader>
+              <CardTitle>Connect Your Wallet</CardTitle>
+              <CardDescription>Please connect your wallet to view your profile</CardDescription>
+            </CardHeader>
+          </Card>
         </main>
       </div>
     )
+  }
+
+  // Filter events created by this user
+  const userEvents = events.filter(
+    (event) => event.creatorAddress.toLowerCase() === userProfile.address.toLowerCase()
+  )
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    })
+  }
+
+  const formatTicketNumber = (ticketNumber: number, totalTickets: number) => {
+    return `#${ticketNumber}/${totalTickets}`
   }
 
   return (
@@ -263,484 +105,325 @@ export default function Profile() {
       <main className="flex-1 container py-12">
         <Breadcrumbs items={[{ label: "Profile" }]} />
 
-        {/* Profile Header */}
         <div className="mb-8">
-          <div className="relative">
-            <div
-              className={`h-48 rounded-lg overflow-hidden ${editMode ? "cursor-pointer group" : ""}`}
-              onClick={editMode ? handleBannerUpload : undefined}
-            >
-              <img
-                src={profileData.banner || "/placeholder.svg"}
-                alt="Profile banner"
-                className="w-full h-full object-cover"
-              />
-              {editMode && (
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <div className="bg-background/80 p-3 rounded-full">
-                    {isUploadingBanner ? (
-                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                    ) : (
-                      <ImageIcon className="h-6 w-6 text-primary" />
-                    )}
+          <div className="flex items-center space-x-4">
+            <Avatar className="h-16 w-16">
+              <AvatarImage src={userProfile.avatar || undefined} alt={userProfile.name} />
+              <AvatarFallback>
+                <User className="h-8 w-8" />
+              </AvatarFallback>
+            </Avatar>
+            <div>
+              <h1 className="text-3xl font-bold">{userProfile.displayName || userProfile.name}</h1>
+              <p className="text-muted-foreground">{userProfile.address}</p>
+              {userProfile.bio && <p className="text-sm mt-1">{userProfile.bio}</p>}
+            </div>
+          </div>
+        </div>
+
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-8">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="overview" className="flex items-center space-x-2">
+              <User className="h-4 w-4" />
+              <span>Overview</span>
+            </TabsTrigger>
+            <TabsTrigger value="events" className="flex items-center space-x-2">
+              <Calendar className="h-4 w-4" />
+              <span>My Events ({userEvents.length})</span>
+            </TabsTrigger>
+            <TabsTrigger value="tickets" className="flex items-center space-x-2">
+              <Ticket className="h-4 w-4" />
+              <span>My Tickets ({userTickets.length})</span>
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="flex items-center space-x-2">
+              <Settings className="h-4 w-4" />
+              <span>Settings</span>
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="space-y-6">
+            <div className="grid gap-6 md:grid-cols-3">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Events Created</CardTitle>
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{userEvents.length}</div>
+                  <p className="text-xs text-muted-foreground">Total events organized</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Tickets Purchased</CardTitle>
+                  <Ticket className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{userTickets.length}</div>
+                  <p className="text-xs text-muted-foreground">Events attended</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Spent</CardTitle>
+                  <User className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {userTickets.reduce((total, ticket) => total + ticket.purchasePrice, 0).toFixed(2)} SEI
+                  </div>
+                  <p className="text-xs text-muted-foreground">On event tickets</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent Activity</CardTitle>
+                <CardDescription>Your latest events and ticket purchases</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {userTickets.slice(0, 3).map((ticket) => (
+                    <div key={`${ticket.kioskAddress}-${ticket.ticketId}`} className="flex items-center space-x-4">
+                      <Ticket className="h-4 w-4 text-muted-foreground" />
+                      <div className="flex-1">
+                        <p className="font-medium">Purchased {ticket.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {formatTicketNumber(ticket.ticketNumber, ticket.totalTickets)} • {ticket.purchasePrice} SEI
+                        </p>
+                      </div>
+                      <Badge variant="outline">
+                        {new Date(ticket.purchaseTimestamp * 1000).toLocaleDateString()}
+                      </Badge>
+                    </div>
+                  ))}
+
+                  {userEvents.slice(0, 2).map((event: any) => (
+                    <div key={event.id} className="flex items-center space-x-4">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <div className="flex-1">
+                        <p className="font-medium">Created "{event.title}"</p>
+                        <p className="text-sm text-muted-foreground">
+                          {event.participants}/{event.maxParticipants} participants • {formatDate(event.date)}
+                        </p>
+                      </div>
+                      <Badge variant={event.status === "live" ? "default" : "secondary"}>
+                        {event.status}
+                      </Badge>
+                    </div>
+                  ))}
+
+                  {userTickets.length === 0 && userEvents.length === 0 && (
+                    <p className="text-muted-foreground text-center py-4">No recent activity</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="events" className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold">My Events</h2>
+              <Button onClick={() => router.push("/event-factory")}>Create New Event</Button>
+            </div>
+
+            {eventsLoading ? (
+              <div className="text-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+                <p className="text-muted-foreground">Loading your events...</p>
+              </div>
+            ) : userEvents.length > 0 ? (
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {userEvents.map((event) => (
+                  <Card key={event.id} className="hover:shadow-md transition-shadow">
+                    <div className="aspect-video overflow-hidden rounded-t-lg">
+                      <img src={event.image} alt={event.title} className="w-full h-full object-cover" />
+                    </div>
+                    <CardHeader>
+                      <CardTitle className="line-clamp-1">{event.title}</CardTitle>
+                      <CardDescription className="line-clamp-2">{event.description}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span>Date:</span>
+                          <span>{formatDate(event.date)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span>Participants:</span>
+                          <span>{event.participants}/{event.maxParticipants}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span>Price:</span>
+                          <span>{event.ticketPrice} SEI</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span>Status:</span>
+                          <Badge variant={event.status === "live" ? "default" : "secondary"}>
+                            {event.status}
+                          </Badge>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="text-center py-12">
+                  <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-medium mb-2">No Events Created</h3>
+                  <p className="text-muted-foreground mb-6">
+                    You haven't created any events yet. Start by creating your first event!
+                  </p>
+                  <Button onClick={() => router.push("/event-factory")}>Create Your First Event</Button>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="tickets" className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold">My Tickets</h2>
+              <div className="flex space-x-2">
+                <Button variant="outline" onClick={loadUserTickets} disabled={ticketsLoading}>
+                  <RefreshCw className={`h-4 w-4 mr-2 ${ticketsLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+                <Button onClick={() => router.push("/ticket-kiosk")}>Browse Events</Button>
+              </div>
+            </div>
+
+            {ticketsLoading ? (
+              <div className="text-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+                <p className="text-muted-foreground">Loading your tickets...</p>
+              </div>
+            ) : userTickets.length > 0 ? (
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {userTickets.map((ticket) => {
+                  // Find the corresponding event
+                  const event = events.find(e => e.contractEventId === ticket.eventId)
+                  
+                  const handleTicketClick = () => {
+                    // Redirect to event room with ticket information
+                    const params = new URLSearchParams({
+                      eventId: ticket.eventId.toString(),
+                      ticketId: ticket.ticketId.toString(),
+                      isCreator: 'false'
+                    })
+                    router.push(`/event-room?${params.toString()}`)
+                  }
+                  
+                  return (
+                    <Card 
+                      key={`${ticket.kioskAddress}-${ticket.ticketId}`} 
+                      className="hover:shadow-md transition-shadow cursor-pointer"
+                      onClick={handleTicketClick}
+                    >
+                      <div className="relative">
+                        <div className="aspect-video overflow-hidden rounded-t-lg">
+                          <img 
+                            src={event?.image || '/placeholder.svg'} 
+                            alt={event?.title || 'Event'} 
+                            className="w-full h-full object-cover" 
+                          />
+                        </div>
+                        {/* Progressive ID Badge */}
+                        <div className="absolute bottom-2 right-2 bg-black/70 text-white px-2 py-1 rounded-md text-xs font-mono">
+                          #{ticket.eventId}
+                        </div>
+                      </div>
+                      <CardHeader>
+                        <CardTitle className="line-clamp-1">{event?.title || `Event #${ticket.eventId}`}</CardTitle>
+                        <CardDescription>
+                          Ticket {formatTicketNumber(ticket.ticketNumber, ticket.totalTickets)}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span>Event ID:</span>
+                            <span className="font-mono">#{ticket.eventId}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span>Ticket:</span>
+                            <span className="font-mono">{ticket.name}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span>Price Paid:</span>
+                            <span>{ticket.purchasePrice} SEI</span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span>Category:</span>
+                            <Badge variant="outline">{ticket.artCategory}</Badge>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span>Purchased:</span>
+                            <span>{new Date(ticket.purchaseTimestamp * 1000).toLocaleDateString()}</span>
+                          </div>
+                          {event && (
+                            <div className="flex items-center justify-between text-sm">
+                              <span>Event Date:</span>
+                              <span>{formatDate(event.date)}</span>
+                            </div>
+                          )}
+                          <div className="pt-2 border-t">
+                            <p className="text-xs text-muted-foreground text-center">
+                              Click to enter event room
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="text-center py-12">
+                  <Ticket className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-medium mb-2">No Tickets Purchased</h3>
+                  <p className="text-muted-foreground mb-6">
+                    You haven't purchased any event tickets yet. Browse available events to get started!
+                  </p>
+                  <Button onClick={() => router.push("/ticket-kiosk")}>Browse Events</Button>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="settings" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Profile Settings</CardTitle>
+                <CardDescription>Manage your profile information and preferences</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium">Wallet Address</label>
+                    <p className="text-sm text-muted-foreground font-mono">{userProfile.address}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Username</label>
+                    <p className="text-sm text-muted-foreground">{userProfile.displayName || userProfile.name}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Bio</label>
+                    <p className="text-sm text-muted-foreground">{userProfile.bio || "No bio set"}</p>
                   </div>
                 </div>
-              )}
-            </div>
-            <div className="absolute -bottom-16 left-8">
-              <div
-                className={`relative ${editMode ? "cursor-pointer group" : ""}`}
-                onClick={editMode ? handleAvatarUpload : undefined}
-              >
-                <Avatar className="h-32 w-32 border-4 border-background">
-                  <AvatarImage src={profileData.avatar} alt={profileData.displayName} />
-                  <AvatarFallback>
-                    {profileData.displayName?.slice(0, 2).toUpperCase() || 
-                     userProfile.address?.slice(2, 4).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                {editMode && (
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-full flex items-center justify-center">
-                    <div className="bg-background/80 p-2 rounded-full">
-                      {isUploadingAvatar ? (
-                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                      ) : (
-                        <Camera className="h-5 w-5 text-primary" />
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="absolute top-4 right-4 flex gap-2">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="bg-background/80"
-                onClick={handleRefreshWallet}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4" />
-                )}
-              </Button>
-              {editMode ? (
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="bg-primary text-primary-foreground"
-                  onClick={handleSaveProfile}
-                  disabled={isUpdating}
-                >
-                  {isUpdating ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : (
-                    <Check className="h-4 w-4 mr-2" />
-                  )}
-                  Save Profile
+                <Button className="mt-6" variant="outline">
+                  Edit Profile (Coming Soon)
                 </Button>
-              ) : (
-                <Button variant="outline" size="sm" className="bg-background/80" onClick={() => setEditMode(true)}>
-                  <Edit className="h-4 w-4 mr-2" />
-                  Edit Profile
-                </Button>
-              )}
-            </div>
-          </div>
-          <div className="mt-20 ml-8">
-            <h1 className="text-3xl font-bold">
-              {profileData.displayName || userProfile.name || "Anonymous User"}
-            </h1>
-            <p className="text-muted-foreground">{userProfile.address}</p>
-            {walletStats && (
-              <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
-                <span className="flex items-center">
-                  <Wallet className="h-4 w-4 mr-1" />
-                  {walletStats.balance.formattedBalance} {walletStats.balance.symbol}
-                </span>
-                <span className="flex items-center">
-                  <Users className="h-4 w-4 mr-1" />
-                  {walletStats.transactionCount} transactions
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Hidden file inputs */}
-        <input
-          type="file"
-          ref={avatarInputRef}
-          className="hidden"
-          accept="image/*"
-          onChange={(e) => handleFileChange(e, "avatar")}
-        />
-        <input
-          type="file"
-          ref={bannerInputRef}
-          className="hidden"
-          accept="image/*"
-          onChange={(e) => handleFileChange(e, "banner")}
-        />
-
-        {/* Profile Completion Cards (shown only if profile is incomplete) */}
-        {isProfileIncomplete && (
-          <div className="mb-8 space-y-4">
-            <h2 className="text-xl font-bold">Complete Your Profile</h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Bio Card */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <User className="h-5 w-5 mr-2 text-primary" />
-                    Add Your Bio
-                  </CardTitle>
-                  <CardDescription>Tell the community about yourself</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Textarea
-                    placeholder="Share your story, interests, or expertise..."
-                    className="min-h-24"
-                    value={profileData.bio}
-                    onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
-                  />
-                </CardContent>
-                <CardFooter>
-                  <Button onClick={handleSaveBio} className="w-full" disabled={isLoading}>
-                    <PlusCircle className="h-4 w-4 mr-2" />
-                    Add Bio
-                  </Button>
-                </CardFooter>
-              </Card>
-
-              {/* Categories Card */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <Brush className="h-5 w-5 mr-2 text-primary" />
-                    Pick Your Favorites
-                  </CardTitle>
-                  <CardDescription>Select up to 3 art categories you're interested in</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      "standup-comedy",
-                      "performance-art",
-                      "poetry-slam",
-                      "open-mic",
-                      "live-painting",
-                      "creative-workshop",
-                    ].map((category) => (
-                      <div
-                        key={category}
-                        className={`p-3 rounded-lg border cursor-pointer flex items-center ${
-                          selectedCategories.includes(category) ? "border-primary bg-primary/5" : ""
-                        }`}
-                        onClick={() => handleCategoryToggle(category)}
-                      >
-                        {selectedCategories.includes(category) && <Check className="h-4 w-4 text-primary mr-2" />}
-                        <span className="capitalize">{category.replace(/-/g, " ")}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    {selectedCategories.length}/3 categories selected
-                  </p>
-                </CardContent>
-                <CardFooter>
-                  <Button onClick={handleSaveCategories} className="w-full" disabled={isLoading}>
-                    <Check className="h-4 w-4 mr-2" />
-                    Save Preferences
-                  </Button>
-                </CardFooter>
-              </Card>
-            </div>
-          </div>
-        )}
-
-        {/* Profile Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Sidebar */}
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>About</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {editMode ? (
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="displayName">Display Name</Label>
-                      <Input
-                        id="displayName"
-                        value={profileData.displayName}
-                        onChange={(e) => setProfileData({ ...profileData, displayName: e.target.value })}
-                        placeholder="Your display name"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="bio">Bio</Label>
-                      <Textarea
-                        id="bio"
-                        value={profileData.bio}
-                        onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
-                        className="min-h-32"
-                        placeholder="Tell us about yourself..."
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground">
-                    {profileData.bio || "No bio added yet. Click 'Edit Profile' to add one."}
-                  </p>
-                )}
               </CardContent>
             </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Social Links</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {editMode ? (
-                  <div className="space-y-4">
-                    {Object.entries(SUPPORTED_SOCIAL_PLATFORMS).map(([platform, config]) => (
-                      <div key={platform} className="space-y-2">
-                        <Label htmlFor={platform} className="flex items-center">
-                          {config.name}
-                        </Label>
-                        <Input
-                          id={platform}
-                          value={profileData.socials[platform as SocialPlatform] || ""}
-                          onChange={(e) => handleSocialChange(platform as SocialPlatform, e.target.value)}
-                          placeholder={config.placeholder}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {Object.entries(SUPPORTED_SOCIAL_PLATFORMS).map(([platform, config]) => {
-                      const value = profileData.socials[platform as SocialPlatform]
-                      if (!value) return null
-                      
-                      const url = platform === 'website' ? value : `${config.baseUrl}${value.replace('@', '')}`
-                      
-                      return (
-                        <div key={platform} className="flex items-center justify-between">
-                          <span className="text-muted-foreground">{config.name}</span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="p-0 h-auto text-primary hover:text-primary/80"
-                            onClick={() => window.open(url, "_blank")}
-                          >
-                            {value}
-                          </Button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Wallet Info Card */}
-            {walletStats && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <Wallet className="h-5 w-5 mr-2" />
-                    Wallet Info
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Balance</span>
-                      <span className="font-medium">
-                        {walletStats.balance.formattedBalance} {walletStats.balance.symbol}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Transactions</span>
-                      <span>{walletStats.transactionCount}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Address</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="p-0 h-auto text-primary hover:text-primary/80"
-                        onClick={() => {
-                          navigator.clipboard.writeText(userProfile.address)
-                          toast.success("Address copied!")
-                        }}
-                      >
-                        {userProfile.address.slice(0, 6)}...{userProfile.address.slice(-4)}
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-
-          {/* Main Content */}
-          <div className="lg:col-span-2">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="events">Your Events</TabsTrigger>
-                <TabsTrigger value="tickets">Your Tickets</TabsTrigger>
-                <TabsTrigger value="favorites">Favorites</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="events" className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <Brush className="h-5 w-5 mr-2" />
-                      Your Created Events
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {userEvents && userEvents.length > 0 ? (
-                      <div className="grid gap-4">
-                        {userEvents.map((event) => {
-                          const eventDate = new Date(event.date)
-                          const now = new Date()
-                          const isLive = now >= eventDate && now <= new Date(eventDate.getTime() + event.duration * 60 * 1000)
-                          const isUpcoming = eventDate > now
-                          
-                          return (
-                          <div key={event.id} className="border rounded-lg p-4">
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2 mb-2">
-                            <h3 className="font-medium">{event.title}</h3>
-                                    {isLive && (
-                                      <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">
-                                        LIVE
-                                      </span>
-                                    )}
-                                    {isUpcoming && (
-                                      <span className="bg-blue-500 text-white text-xs px-2 py-1 rounded-full">
-                                        UPCOMING
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="text-sm text-muted-foreground mb-2">{event.description}</p>
-                                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                                    <span className="flex items-center">
-                                      <Calendar className="h-3 w-3 mr-1" />
-                                      {eventDate.toLocaleDateString()}
-                                    </span>
-                                    <span className="flex items-center">
-                                      <Clock className="h-3 w-3 mr-1" />
-                                      {event.duration}m
-                                    </span>
-                                    <span className="flex items-center">
-                                      <Users className="h-3 w-3 mr-1" />
-                                      {event.participants}/{event.maxParticipants}
-                                    </span>
-                                  </div>
-                                </div>
-                                <div className="flex flex-col gap-2">
-                                  {isLive && (
-                                    <Button
-                                      size="sm"
-                                      className="bg-red-600 hover:bg-red-700"
-                                      onClick={() => router.push(`/event-room?eventId=${(event as any).contractEventId || event.id}&isCreator=true`)}
-                                    >
-                                      <Video className="h-4 w-4 mr-2" />
-                                      Join & Stream
-                                    </Button>
-                                  )}
-                                  {isUpcoming && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => router.push(`/ticket-kiosk/${event.id}`)}
-                                    >
-                                      View Event
-                                    </Button>
-                                  )}
-                                </div>
-                              </div>
-                          </div>
-                          )
-                        })}
-                      </div>
-                    ) : (
-                      <div className="text-center py-8">
-                        <Brush className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                        <p className="text-muted-foreground">No events created yet</p>
-                        <Button
-                          className="mt-4"
-                          onClick={() => router.push("/event-factory")}
-                        >
-                          Create Your First Event
-                        </Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="tickets" className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <Ticket className="h-5 w-5 mr-2" />
-                      Your Tickets
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-center py-8">
-                      <Ticket className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                      <p className="text-muted-foreground">No tickets purchased yet</p>
-                      <Button
-                        className="mt-4"
-                        onClick={() => router.push("/ticket-kiosk")}
-                      >
-                        Browse Events
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="favorites" className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Favorite Categories</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {selectedCategories.length > 0 ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {selectedCategories.map((category) => (
-                          <div key={category} className="flex items-center p-4 border rounded-lg">
-                            <ArtCategoryIcon category={category as any} className="h-8 w-8 mr-3" />
-                            <span className="capitalize font-medium">{String(category).replace(/-/g, " ")}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-8">
-                        <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                        <p className="text-muted-foreground">No favorite categories selected</p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   )

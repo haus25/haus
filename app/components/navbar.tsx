@@ -8,25 +8,17 @@ import { memo, useState } from "react"
 import { Button } from "./ui/button"
 import { Plus } from "lucide-react"
 import { useAuth } from "../contexts/auth"
-import { WaitlistModal } from "./waitlist"
 
 // Memoize the navbar to prevent unnecessary re-renders
 export const Navbar = memo(function Navbar() {
   const pathname = usePathname()
   const { isConnected, hasInviteAccess } = useAuth()
-  const [showWaitlistModal, setShowWaitlistModal] = useState(false)
 
   // Check if we're on the landing page
   const isLandingPage = pathname === "/"
 
   // Check if we're in an authentication flow
   const isAuthFlow = pathname.includes("/auth") || pathname.includes("/login") || pathname.includes("/signup")
-
-  const handleCreateClick = () => {
-    if (!hasInviteAccess) {
-      setShowWaitlistModal(true)
-    }
-  }
 
   // Determine which navigation links to show
   const renderNavLinks = () => {
@@ -41,13 +33,6 @@ export const Navbar = memo(function Navbar() {
                 Create
               </Button>
             </Link>
-          )}
-
-          {!hasInviteAccess && (
-            <Button variant="outline" size="sm" className="hidden md:flex" onClick={handleCreateClick}>
-              <Plus className="h-4 w-4 mr-2" />
-              Create
-            </Button>
           )}
         </>
       )
@@ -104,12 +89,6 @@ export const Navbar = memo(function Navbar() {
           </nav>
         </div>
       </header>
-
-      <WaitlistModal
-        isOpen={showWaitlistModal}
-        onClose={() => setShowWaitlistModal(false)}
-        redirectPath="/event-factory" // Redirect to event factory after successful code entry
-      />
     </>
   )
 })

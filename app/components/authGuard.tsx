@@ -6,7 +6,6 @@ import { useEffect, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useAuth } from "../contexts/auth"
 import { LoginModal } from "./loginModal"
-import { WaitlistModal } from "./waitlist"
 import { Loader2 } from "lucide-react"
 
 // Public routes that don't require authentication
@@ -21,17 +20,10 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const router = useRouter()
   const pathname = usePathname()
   const [showLoginModal, setShowLoginModal] = useState(false)
-  const [showWaitlistModal, setShowWaitlistModal] = useState(false)
 
   useEffect(() => {
     // Skip auth check for public routes
     if (PUBLIC_ROUTES.includes(pathname)) {
-      return
-    }
-
-    // First check if user has invite access
-    if (!hasInviteAccess) {
-      setShowWaitlistModal(true)
       return
     }
 
@@ -50,23 +42,6 @@ export function AuthGuard({ children }: AuthGuardProps) {
           <p className="text-lg font-medium">Loading your profile...</p>
         </div>
       </div>
-    )
-  }
-
-  // If not on public route and no invite access, show waitlist modal
-  if (!PUBLIC_ROUTES.includes(pathname) && !hasInviteAccess) {
-    return (
-      <>
-        {children}
-        <WaitlistModal
-          isOpen={showWaitlistModal}
-          onClose={() => {
-            setShowWaitlistModal(false)
-            router.push("/")
-          }}
-          redirectPath={pathname} // Pass the current path for redirect after successful code entry
-        />
-      </>
     )
   }
 
