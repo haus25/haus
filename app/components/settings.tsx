@@ -1,27 +1,30 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog"
 import { SocialVerification } from "./socialVerification"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Button } from "./ui/button"
 import { Switch } from "./ui/switch"
 import { Label } from "./ui/label"
-import { Separator } from "./ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs"
 import { ScrollArea } from "./ui/scrollArea"
+import { Input } from "./ui/input"
+import { Textarea } from "./ui/textarea"
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
 import { 
-  Settings, 
+  User, 
   Shield, 
   Bell, 
-  Users, 
   Link as LinkIcon,
-  Eye,
-  Lock,
-  Globe,
-  X
+  X,
+  Camera,
+  ImageIcon,
+  Check,
+  Loader2
 } from "lucide-react"
 import { useAuth } from "../contexts/auth"
+import { SUPPORTED_SOCIAL_PLATFORMS, type SocialPlatform } from "../lib/constants"
 import { toast } from "sonner"
 
 interface SettingsModalProps {
@@ -29,8 +32,30 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ children }: SettingsModalProps) {
-  const { userProfile, updateProfile, isLoading } = useAuth()
+  const { 
+    userProfile, 
+    updateProfile, 
+    uploadAvatar, 
+    uploadBanner, 
+    isLoading 
+  } = useAuth()
   const [open, setOpen] = useState(false)
+  const [isUpdating, setIsUpdating] = useState(false)
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
+  const [isUploadingBanner, setIsUploadingBanner] = useState(false)
+  
+  // Profile data state
+  const [profileData, setProfileData] = useState({
+    displayName: userProfile?.displayName || userProfile?.name || "",
+    bio: userProfile?.bio || "",
+    avatar: userProfile?.avatar || "",
+    banner: userProfile?.banner || "",
+    socials: userProfile?.socials || {},
+  })
+  
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(
+    userProfile?.preferences || []
+  )
   
   // Settings state
   const [notifications, setNotifications] = useState({
@@ -38,15 +63,30 @@ export function SettingsModal({ children }: SettingsModalProps) {
     newFollowers: true,
     eventInvites: true,
     tipNotifications: true,
-    weeklyDigest: false,
   })
 
   const [privacy, setPrivacy] = useState({
     profilePublic: true,
     showWalletBalance: false,
-    showTransactionHistory: false,
     allowDirectMessages: true,
   })
+
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+  const bannerInputRef = useRef<HTMLInputElement>(null)
+
+  // Update local state when userProfile changes
+  useEffect(() => {
+    if (userProfile) {
+      setProfileData({
+        displayName: userProfile.displayName || userProfile.name || "",
+        bio: userProfile.bio || "",
+        avatar: userProfile.avatar || "",
+        banner: userProfile.banner || "",
+        socials: userProfile.socials || {},
+      })
+      setSelectedCategories(userProfile.preferences || [])
+    }
+  }, [userProfile])
 
   const handleNotificationChange = (setting: keyof typeof notifications) => {
     setNotifications(prev => ({
@@ -64,6 +104,97 @@ export function SettingsModal({ children }: SettingsModalProps) {
     toast.success("Privacy settings updated")
   }
 
+  const handleAvatarUpload = () => {
+    if (avatarInputRef.current) {
+      avatarInputRef.current.click()
+    }
+  }
+
+  const handleBannerUpload = () => {
+    if (bannerInputRef.current) {
+      bannerInputRef.current.click()
+    }
+  }
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, type: "avatar" | "banner") => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0]
+      
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("File size must be less than 5MB")
+        return
+      }
+
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        toast.error("Please select an image file")
+        return
+      }
+
+      try {
+        if (type === "avatar") {
+          setIsUploadingAvatar(true)
+          const imageUrl = await uploadAvatar(file)
+          setProfileData({ ...profileData, avatar: imageUrl })
+          toast.success("Avatar updated successfully!")
+        } else {
+          setIsUploadingBanner(true)
+          const imageUrl = await uploadBanner(file)
+          setProfileData({ ...profileData, banner: imageUrl })
+          toast.success("Banner updated successfully!")
+        }
+      } catch (error) {
+        console.error(`Failed to upload ${type}:`, error)
+        toast.error(`Failed to upload ${type}. Please try again.`)
+      } finally {
+        if (type === "avatar") {
+          setIsUploadingAvatar(false)
+        } else {
+          setIsUploadingBanner(false)
+        }
+      }
+    }
+  }
+
+  const handleSaveProfile = async () => {
+    try {
+      setIsUpdating(true)
+      
+      await updateProfile({
+        displayName: profileData.displayName,
+        bio: profileData.bio,
+        socials: profileData.socials,
+        preferences: selectedCategories,
+        isProfileComplete: true,
+      })
+      
+      toast.success("Profile updated successfully!")
+      setOpen(false)
+    } catch (error) {
+      console.error("Failed to save profile:", error)
+      toast.error("Failed to update profile. Please try again.")
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  const handleCategoryToggle = (category: string) => {
+    setSelectedCategories((prev) =>
+      prev.includes(category) ? prev.filter((c) => c !== category) : prev.length < 3 ? [...prev, category] : prev,
+    )
+  }
+
+  const handleSocialChange = (platform: SocialPlatform, value: string) => {
+    setProfileData({
+      ...profileData,
+      socials: {
+        ...profileData.socials,
+        [platform]: value,
+      },
+    })
+  }
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -73,9 +204,9 @@ export function SettingsModal({ children }: SettingsModalProps) {
         <DialogHeader className="px-4 sm:px-6 py-4 border-b flex-shrink-0">
           <div className="flex items-center justify-between">
             <div>
-              <DialogTitle className="text-xl sm:text-2xl font-bold">Settings</DialogTitle>
+              <DialogTitle className="text-xl sm:text-2xl font-bold">Edit Profile</DialogTitle>
               <DialogDescription className="text-sm sm:text-base">
-                Manage your account preferences, privacy settings, and social verification
+                Update your profile information and social verification
               </DialogDescription>
             </div>
             <Button 
@@ -90,158 +221,206 @@ export function SettingsModal({ children }: SettingsModalProps) {
         </DialogHeader>
         
         <div className="flex h-full flex-col sm:flex-row overflow-hidden">
-          <Tabs defaultValue="social" orientation="vertical" className="w-full flex flex-col sm:flex-row h-full">
-            {/* Settings Navigation */}
+          <Tabs defaultValue="profile" orientation="vertical" className="w-full flex flex-col sm:flex-row h-full">
+            {/* Navigation */}
             <div className="w-full sm:w-64 border-b sm:border-b-0 sm:border-r flex-shrink-0">
               <div className="h-auto sm:h-full">
                 <TabsList className="flex flex-row sm:flex-col h-auto w-full bg-transparent p-2 space-x-1 sm:space-x-0 sm:space-y-1 overflow-x-auto sm:overflow-x-visible">
+                  <TabsTrigger 
+                    value="profile" 
+                    className="flex-shrink-0 sm:w-full justify-start p-2 sm:p-3 data-[state=active]:bg-accent text-xs sm:text-sm"
+                  >
+                    <User className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    <span>Profile</span>
+                  </TabsTrigger>
                   <TabsTrigger 
                     value="social" 
                     className="flex-shrink-0 sm:w-full justify-start p-2 sm:p-3 data-[state=active]:bg-accent text-xs sm:text-sm"
                   >
                     <LinkIcon className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                    <span className="hidden sm:inline">Social Verification</span>
-                    <span className="sm:hidden">Social</span>
+                    <span>Social</span>
                   </TabsTrigger>
                   <TabsTrigger 
-                    value="privacy" 
-                    className="flex-shrink-0 sm:w-full justify-start p-2 sm:p-3 data-[state=active]:bg-accent text-xs sm:text-sm"
-                  >
-                    <Shield className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                    <span className="hidden sm:inline">Privacy & Security</span>
-                    <span className="sm:hidden">Privacy</span>
-                  </TabsTrigger>
-                  <TabsTrigger 
-                    value="notifications" 
+                    value="preferences" 
                     className="flex-shrink-0 sm:w-full justify-start p-2 sm:p-3 data-[state=active]:bg-accent text-xs sm:text-sm"
                   >
                     <Bell className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                    <span className="hidden sm:inline">Notifications</span>
-                    <span className="sm:hidden">Notify</span>
-                  </TabsTrigger>
-                  <TabsTrigger 
-                    value="account" 
-                    className="flex-shrink-0 sm:w-full justify-start p-2 sm:p-3 data-[state=active]:bg-accent text-xs sm:text-sm"
-                  >
-                    <Users className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                    <span className="hidden sm:inline">Account</span>
-                    <span className="sm:hidden">Account</span>
+                    <span>Preferences</span>
                   </TabsTrigger>
                 </TabsList>
               </div>
             </div>
 
-            {/* Settings Content */}
+            {/* Content */}
             <div className="flex-1 min-h-0 overflow-hidden">
               <ScrollArea className="h-full">
                 <div className="p-4 sm:p-6 space-y-6">
+
+                  {/* Profile Tab */}
+                  <TabsContent value="profile" className="mt-0 space-y-4 sm:space-y-6">
+                    {/* Profile Images */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center text-lg sm:text-xl">
+                          <ImageIcon className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+                          Profile Images
+                        </CardTitle>
+                        <CardDescription className="text-sm">
+                          Upload your avatar and banner images
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-6">
+                        {/* Banner */}
+                        <div>
+                          <Label className="text-sm font-medium">Banner</Label>
+                          <div
+                            className="mt-2 h-32 rounded-lg overflow-hidden cursor-pointer group border-2 border-dashed border-muted hover:border-primary transition-colors relative"
+                            onClick={handleBannerUpload}
+                          >
+                            <img
+                              src={profileData.banner || "/placeholder.svg"}
+                              alt="Profile banner"
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <div className="bg-background/80 p-3 rounded-full">
+                                {isUploadingBanner ? (
+                                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                ) : (
+                                  <ImageIcon className="h-6 w-6 text-primary" />
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Avatar */}
+                        <div>
+                          <Label className="text-sm font-medium">Avatar</Label>
+                          <div className="mt-2 flex items-center space-x-4">
+                            <div
+                              className="relative cursor-pointer group"
+                              onClick={handleAvatarUpload}
+                            >
+                              <Avatar className="h-20 w-20 border-2 border-muted">
+                                <AvatarImage src={profileData.avatar || undefined} alt={profileData.displayName} />
+                                <AvatarFallback>
+                                  {profileData.displayName?.slice(0, 2).toUpperCase() || 
+                                   userProfile?.address?.slice(2, 4).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-full flex items-center justify-center">
+                                <div className="bg-background/80 p-2 rounded-full">
+                                  {isUploadingAvatar ? (
+                                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                                  ) : (
+                                    <Camera className="h-4 w-4 text-primary" />
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm text-muted-foreground">
+                                Click to upload a new avatar. Recommended size: 400x400px. Max file size: 5MB.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Basic Information */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center text-lg sm:text-xl">
+                          <User className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+                          Basic Information
+                        </CardTitle>
+                        <CardDescription className="text-sm">
+                          Update your display name and bio
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="displayName">Display Name</Label>
+                          <Input
+                            id="displayName"
+                            value={profileData.displayName}
+                            onChange={(e) => setProfileData({ ...profileData, displayName: e.target.value })}
+                            placeholder="Your display name"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="bio">Bio</Label>
+                          <Textarea
+                            id="bio"
+                            value={profileData.bio}
+                            onChange={(e) => setProfileData({ ...profileData, bio: e.target.value })}
+                            className="min-h-24"
+                            placeholder="Tell us about yourself..."
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Favorite Categories */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg sm:text-xl">
+                          Favorite Categories
+                        </CardTitle>
+                        <CardDescription className="text-sm">
+                          Select up to 3 categories you're interested in
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            "standup-comedy",
+                            "performance-art",
+                            "poetry-slam",
+                            "open-mic",
+                            "live-painting",
+                            "creative-workshop",
+                          ].map((category) => (
+                            <div
+                              key={category}
+                              className={`p-3 rounded-lg border cursor-pointer flex items-center transition-colors ${
+                                selectedCategories.includes(category) ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+                              }`}
+                              onClick={() => handleCategoryToggle(category)}
+                            >
+                              {selectedCategories.includes(category) && <Check className="h-4 w-4 text-primary mr-2" />}
+                              <span className="capitalize text-sm">{category.replace(/-/g, " ")}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {selectedCategories.length}/3 categories selected
+                        </p>
+                      </CardContent>
+                    </Card>
+
+                    {/* Save Button */}
+                    <div className="flex justify-end">
+                      <Button onClick={handleSaveProfile} disabled={isUpdating}>
+                        {isUpdating ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <Check className="h-4 w-4 mr-2" />
+                        )}
+                        Save Profile
+                      </Button>
+                    </div>
+                  </TabsContent>
+
+                  {/* Social Verification Tab */}
                   <TabsContent value="social" className="mt-0">
                     <SocialVerification />
                   </TabsContent>
 
-                  <TabsContent value="privacy" className="mt-0 space-y-4 sm:space-y-6">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center text-lg sm:text-xl">
-                          <Shield className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                          Privacy Settings
-                        </CardTitle>
-                        <CardDescription className="text-sm">
-                          Control who can see your information and activity
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4 sm:space-y-6">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
-                          <div className="space-y-0.5">
-                            <Label className="text-sm sm:text-base">Public Profile</Label>
-                            <p className="text-xs sm:text-sm text-muted-foreground">
-                              Make your profile visible to everyone
-                            </p>
-                          </div>
-                          <Switch
-                            checked={privacy.profilePublic}
-                            onCheckedChange={() => handlePrivacyChange('profilePublic')}
-                            className="self-start sm:self-auto"
-                          />
-                        </div>
-
-                        <Separator />
-
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
-                          <div className="space-y-0.5">
-                            <Label className="text-sm sm:text-base">Show Wallet Balance</Label>
-                            <p className="text-xs sm:text-sm text-muted-foreground">
-                              Display your wallet balance on your profile
-                            </p>
-                          </div>
-                          <Switch
-                            checked={privacy.showWalletBalance}
-                            onCheckedChange={() => handlePrivacyChange('showWalletBalance')}
-                            className="self-start sm:self-auto"
-                          />
-                        </div>
-
-                        <Separator />
-
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
-                          <div className="space-y-0.5">
-                            <Label className="text-sm sm:text-base">Show Transaction History</Label>
-                            <p className="text-xs sm:text-sm text-muted-foreground">
-                              Make your transaction history visible to others
-                            </p>
-                          </div>
-                          <Switch
-                            checked={privacy.showTransactionHistory}
-                            onCheckedChange={() => handlePrivacyChange('showTransactionHistory')}
-                            className="self-start sm:self-auto"
-                          />
-                        </div>
-
-                        <Separator />
-
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
-                          <div className="space-y-0.5">
-                            <Label className="text-sm sm:text-base">Allow Direct Messages</Label>
-                            <p className="text-xs sm:text-sm text-muted-foreground">
-                              Let other users send you direct messages
-                            </p>
-                          </div>
-                          <Switch
-                            checked={privacy.allowDirectMessages}
-                            onCheckedChange={() => handlePrivacyChange('allowDirectMessages')}
-                            className="self-start sm:self-auto"
-                          />
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center text-lg sm:text-xl">
-                          <Lock className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                          Security
-                        </CardTitle>
-                        <CardDescription className="text-sm">
-                          Your wallet security is managed by Dynamic
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div className="p-3 sm:p-4 bg-green-50 border border-green-200 rounded-lg">
-                          <h4 className="font-medium text-green-900 mb-2 text-sm sm:text-base">Wallet Security</h4>
-                          <p className="text-xs sm:text-sm text-green-700">
-                            Your wallet is secured using Dynamic's advanced multi-party computation (MPC) technology. 
-                            Your private keys are encrypted and distributed across multiple secure environments.
-                          </p>
-                        </div>
-                        <Button variant="outline" className="w-full text-sm">
-                          <Globe className="h-4 w-4 mr-2" />
-                          Learn More About Dynamic Security
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
-
-                  <TabsContent value="notifications" className="mt-0">
+                  {/* Preferences Tab */}
+                  <TabsContent value="preferences" className="mt-0 space-y-4 sm:space-y-6">
                     <Card>
                       <CardHeader>
                         <CardTitle className="flex items-center text-lg sm:text-xl">
@@ -252,165 +431,58 @@ export function SettingsModal({ children }: SettingsModalProps) {
                           Choose what notifications you want to receive
                         </CardDescription>
                       </CardHeader>
-                      <CardContent className="space-y-4 sm:space-y-6">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
+                      <CardContent className="space-y-4">
+                        {Object.entries(notifications).map(([key, value]) => (
+                          <div key={key} className="flex items-center justify-between">
                           <div className="space-y-0.5">
-                            <Label className="text-sm sm:text-base">Event Reminders</Label>
-                            <p className="text-xs sm:text-sm text-muted-foreground">
-                              Get notified 30 minutes before events you're attending
+                              <Label className="text-sm font-medium capitalize">
+                                {key.replace(/([A-Z])/g, ' $1').toLowerCase()}
+                              </Label>
+                              <p className="text-xs text-muted-foreground">
+                                {key === 'eventReminders' && 'Get reminded about upcoming events you\'re attending'}
+                                {key === 'newFollowers' && 'Notify when someone follows you'}
+                                {key === 'eventInvites' && 'Receive invitations to events'}
+                                {key === 'tipNotifications' && 'Get notified when you receive tips'}
                             </p>
                           </div>
                           <Switch
-                            checked={notifications.eventReminders}
-                            onCheckedChange={() => handleNotificationChange('eventReminders')}
-                            className="self-start sm:self-auto"
-                          />
-                        </div>
-
-                        <Separator />
-
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
-                          <div className="space-y-0.5">
-                            <Label className="text-sm sm:text-base">New Followers</Label>
-                            <p className="text-xs sm:text-sm text-muted-foreground">
-                              Get notified when someone follows you
-                            </p>
+                              checked={value}
+                              onCheckedChange={() => handleNotificationChange(key as keyof typeof notifications)}
+                            />
                           </div>
-                          <Switch
-                            checked={notifications.newFollowers}
-                            onCheckedChange={() => handleNotificationChange('newFollowers')}
-                            className="self-start sm:self-auto"
-                          />
-                        </div>
-
-                        <Separator />
-
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
-                          <div className="space-y-0.5">
-                            <Label className="text-sm sm:text-base">Event Invites</Label>
-                            <p className="text-xs sm:text-sm text-muted-foreground">
-                              Get notified when you're invited to private events
-                            </p>
-                          </div>
-                          <Switch
-                            checked={notifications.eventInvites}
-                            onCheckedChange={() => handleNotificationChange('eventInvites')}
-                            className="self-start sm:self-auto"
-                          />
-                        </div>
-
-                        <Separator />
-
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
-                          <div className="space-y-0.5">
-                            <Label className="text-sm sm:text-base">Tip Notifications</Label>
-                            <p className="text-xs sm:text-sm text-muted-foreground">
-                              Get notified when you receive tips during live events
-                            </p>
-                          </div>
-                          <Switch
-                            checked={notifications.tipNotifications}
-                            onCheckedChange={() => handleNotificationChange('tipNotifications')}
-                            className="self-start sm:self-auto"
-                          />
-                        </div>
-
-                        <Separator />
-
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
-                          <div className="space-y-0.5">
-                            <Label className="text-sm sm:text-base">Weekly Digest</Label>
-                            <p className="text-xs sm:text-sm text-muted-foreground">
-                              Receive a weekly summary of platform activity
-                            </p>
-                          </div>
-                          <Switch
-                            checked={notifications.weeklyDigest}
-                            onCheckedChange={() => handleNotificationChange('weeklyDigest')}
-                            className="self-start sm:self-auto"
-                          />
-                        </div>
+                        ))}
                       </CardContent>
                     </Card>
-                  </TabsContent>
 
-                  <TabsContent value="account" className="mt-0">
                     <Card>
                       <CardHeader>
                         <CardTitle className="flex items-center text-lg sm:text-xl">
-                          <Users className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                          Account Information
+                          <Shield className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+                          Privacy Settings
                         </CardTitle>
                         <CardDescription className="text-sm">
-                          Your account details and wallet information
+                          Control who can see your information and activity
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-4">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
-                            <Label className="text-xs sm:text-sm font-medium text-muted-foreground">Display Name</Label>
-                            <p className="text-sm sm:text-base">
-                              {userProfile?.displayName || userProfile?.ensName || "Not set"}
+                        {Object.entries(privacy).map(([key, value]) => (
+                          <div key={key} className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                              <Label className="text-sm font-medium capitalize">
+                                {key.replace(/([A-Z])/g, ' $1').toLowerCase()}
+                              </Label>
+                              <p className="text-xs text-muted-foreground">
+                                {key === 'profilePublic' && 'Make your profile visible to everyone'}
+                                {key === 'showWalletBalance' && 'Display your wallet balance on your profile'}
+                                {key === 'allowDirectMessages' && 'Allow other users to send you direct messages'}
                             </p>
                           </div>
-                          <div>
-                            <Label className="text-xs sm:text-sm font-medium text-muted-foreground">Wallet Address</Label>
-                            <p className="text-sm sm:text-base font-mono break-all">
-                              {userProfile?.address ? 
-                                `${userProfile.address.slice(0, 6)}...${userProfile.address.slice(-4)}` : 
-                                "Not connected"
-                              }
-                            </p>
+                            <Switch
+                              checked={value}
+                              onCheckedChange={() => handlePrivacyChange(key as keyof typeof privacy)}
+                            />
                           </div>
-                          <div>
-                            <Label className="text-xs sm:text-sm font-medium text-muted-foreground">Profile Status</Label>
-                            <p className="text-sm sm:text-base">
-                              {userProfile?.isProfileComplete ? "Complete" : "Incomplete"}
-                            </p>
-                          </div>
-                          <div>
-                            <Label className="text-xs sm:text-sm font-medium text-muted-foreground">Favorite Categories</Label>
-                            <p className="text-sm sm:text-base">
-                              {userProfile?.favoriteCategories?.length || 0} selected
-                            </p>
-                          </div>
-                        </div>
-
-                        <Separator />
-
-                        <div className="space-y-4">
-                          <h4 className="font-medium text-sm sm:text-base">Account Actions</h4>
-                          <div className="flex flex-col gap-2">
-                            <Button 
-                              variant="outline" 
-                              onClick={() => {
-                                setOpen(false)
-                                window.location.href = '/profile'
-                              }}
-                              className="w-full text-sm"
-                            >
-                              <Eye className="h-4 w-4 mr-2" />
-                              View Profile
-                            </Button>
-                            <Button 
-                              variant="outline" 
-                              onClick={() => {
-                                setOpen(false)
-                                window.location.href = '/profile/wallet'
-                              }}
-                              className="w-full text-sm"
-                            >
-                              <Eye className="h-4 w-4 mr-2" />
-                              View Wallet
-                            </Button>
-                          </div>
-                        </div>
-
-                        <div className="p-3 sm:p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                          <Button variant="outline" size="sm" className="text-xs sm:text-sm">
-                            Contact Support
-                          </Button>
-                        </div>
+                        ))}
                       </CardContent>
                     </Card>
                   </TabsContent>
@@ -419,6 +491,22 @@ export function SettingsModal({ children }: SettingsModalProps) {
             </div>
           </Tabs>
         </div>
+
+        {/* Hidden file inputs */}
+        <input
+          type="file"
+          ref={avatarInputRef}
+          className="hidden"
+          accept="image/*"
+          onChange={(e) => handleFileChange(e, "avatar")}
+        />
+        <input
+          type="file"
+          ref={bannerInputRef}
+          className="hidden"
+          accept="image/*"
+          onChange={(e) => handleFileChange(e, "banner")}
+        />
       </DialogContent>
     </Dialog>
   )

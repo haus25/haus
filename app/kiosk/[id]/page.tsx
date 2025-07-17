@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Navbar } from "../../components/navbar"
 import { Breadcrumbs } from "../../components/breadcrumbs"
-import { QuickAccess } from "../../components/quickAccess"
+import { QuickAccess } from "../../contexts/auth"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card"
 import { Button } from "../../components/ui/button"
 import { Badge } from "../../components/ui/badge"
@@ -22,10 +22,9 @@ import {
   Loader2
 } from "lucide-react"
 import { toast } from "sonner"
-import { fetchOnChainEvents, type OnChainEventData } from "../../services/onChainEvents"
+import { fetchOnChainEvents, type OnChainEventData, createTicketPurchaseService } from "../../services/tickets"
 import { useAuth } from "../../contexts/auth"
 import { useWalletClient } from 'wagmi'
-import { createTicketPurchaseService } from "../../services/buyTicket"
 
 interface EventDetailPageProps {
   params: {
@@ -173,7 +172,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             <p className="text-muted-foreground mb-6">
               The event you're looking for doesn't exist or has been removed.
             </p>
-            <Button onClick={() => router.push('/ticket-kiosk')}>
+            <Button onClick={() => router.push('/kiosk')}>
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to Ticket Kiosk
             </Button>
@@ -190,7 +189,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
 
       <main className="flex-1 container py-12">
         <Breadcrumbs items={[
-          { label: "", href: "/ticket-kiosk" },
+          { label: "", href: "/kiosk" },
           { label: event.title }
         ]} />
 

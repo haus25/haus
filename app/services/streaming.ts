@@ -1,11 +1,4 @@
-export interface StreamConfig {
-  eventId: string;
-  isCreator: boolean;
-  userId: string;
-  eventStartTime: string;
-  eventDuration: number; // in minutes
-}
-
+// Simplified streaming service - NO BACKEND REQUIRED
 export interface StreamSession {
   streamUrl: string;
   playUrl: string;
@@ -14,32 +7,240 @@ export interface StreamSession {
   sessionId: string;
 }
 
+export interface StreamStatus {
+  isLive: boolean;
+  viewerCount: number;
+  hasAccess: boolean;
+}
+
 class StreamingService {
-  private srsBaseUrl: string;
-  private eventRoomUrl: string;
   private currentStream: MediaStream | null = null;
   private peerConnection: RTCPeerConnection | null = null;
   private videoElement: HTMLVideoElement | null = null;
 
   constructor() {
-    // Use DNS-configured domain for SRS server
-    this.srsBaseUrl = 'room.haus25.live';
-    this.eventRoomUrl = 'https://room.haus25.live';
+    console.log('STREAMING: Simplified service initialized - no backend required');
   }
 
   /**
-   * Generate stream URLs for an event
+   * Generate stream URLs directly (no backend needed)
    */
   generateStreamUrls(eventId: string): StreamSession {
     const sessionId = `event_${eventId}_${Date.now()}`;
-    const streamKey = `live/${eventId}`;
     
     return {
-      streamUrl: `rtmp://${this.srsBaseUrl}:1935/live/${eventId}`,
-      playUrl: `https://${this.srsBaseUrl}:8080/live/${eventId}.flv`,
-      whipUrl: `https://${this.srsBaseUrl}:1985/rtc/v1/whip/?app=live&stream=${eventId}`,
-      whepUrl: `https://${this.srsBaseUrl}:1985/rtc/v1/whep/?app=live&stream=${eventId}`,
+      streamUrl: `rtmp://room.haus25.live:1935/live/${eventId}`,
+      playUrl: `https://room.haus25.live:8080/live/${eventId}.flv`,
+      whipUrl: `https://room.haus25.live/rtc/v1/whip/?app=live&stream=${eventId}`,
+      whepUrl: `https://room.haus25.live/rtc/v1/whep/?app=live&stream=${eventId}`,
       sessionId
+    };
+  }
+
+  /**
+   * Generate event room URL directly
+   */
+  generateEventRoomUrl(eventId: string): string {
+    if (typeof window !== 'undefined') {
+      const isProductionDomain = window.location.hostname.includes('haus25.live');
+      if (isProductionDomain) {
+        return `https://room.haus25.live/${eventId}`;
+      } else {
+        return `http://localhost:3000/room/${eventId}`;
+      }
+    } else {
+      return process.env.NODE_ENV === 'production' 
+        ? `https://room.haus25.live/${eventId}`
+        : `http://localhost:3000/room/${eventId}`;
+    }
+  }
+
+  /**
+   * Reserve stream URLs (simplified - just returns generated URLs)
+   */
+  async reserveStreamUrl(eventId: string, startTime: string, duration: number): Promise<{
+    success: boolean;
+    streamUrls: StreamSession;
+    eventRoomUrl: string;
+  }> {
+    console.log('STREAMING: Generating stream URLs directly for event', eventId);
+    
+    const streamUrls = this.generateStreamUrls(eventId);
+    const roomUrl = this.generateEventRoomUrl(eventId);
+    
+    return {
+      success: true,
+      streamUrls,
+      eventRoomUrl: roomUrl
+    };
+  }
+
+  /**
+   * Check stream status directly from SRS API
+   */
+  async checkStreamStatus(eventId: string): Promise<{
+    isLive: boolean;
+    available: boolean;
+    isActive: boolean;
+    hasEnded: boolean;
+  }> {
+    try {
+      const srsApiUrl = 'https://room.haus25.live/srs-api/v1/streams/';
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch(srsApiUrl, {
+        signal: controller.signal,
+        headers: { 'Accept': 'application/json' }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`SRS API responded with status: ${response.status}`);
+      }
+
+      const srsData = await response.json();
+      
+      const isLive = srsData.streams?.some((stream: any) => 
+        stream.app === 'live' && stream.stream === eventId
+      ) || false;
+      
+      console.log('STREAMING: Direct SRS status check:', { eventId, isLive });
+      
+      return {
+        isLive,
+        available: true,
+        isActive: isLive,
+        hasEnded: false
+      };
+
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.warn('STREAMING: SRS status check timed out');
+      } else {
+        console.warn('STREAMING: Error checking SRS status:', error);
+      }
+      
+      return {
+        isLive: false,
+        available: true,
+        isActive: false,
+        hasEnded: false
+      };
+    }
+  }
+
+  /**
+   * Check if an event is currently valid to stream based on blockchain timing
+   */
+  async checkEventTiming(eventId: string): Promise<{
+    canStream: boolean;
+    status: 'upcoming' | 'live' | 'ended';
+    timeUntilStart?: number;
+    timeUntilEnd?: number;
+    startDate: Date;
+    endDate: Date;
+  }> {
+    try {
+      // Get event data from blockchain (this is your scheduling system!)
+      const { createEventFactoryService } = await import('./create');
+      const eventService = createEventFactoryService();
+      const eventDetails = await eventService.getEventDetails(parseInt(eventId));
+      
+      const now = new Date();
+      const startDate = new Date(eventDetails.startDate * 1000); // Convert from Unix
+      const endDate = new Date(startDate.getTime() + eventDetails.eventDuration * 60 * 1000);
+      
+      let status: 'upcoming' | 'live' | 'ended';
+      let canStream = false;
+      
+      if (now < startDate) {
+        status = 'upcoming';
+        canStream = false; // Event hasn't started yet
+      } else if (now <= endDate) {
+        status = 'live';
+        canStream = true; // Event is currently live
+      } else {
+        status = 'ended';
+        canStream = false; // Event has ended
+      }
+      
+      return {
+        canStream,
+        status,
+        timeUntilStart: status === 'upcoming' ? startDate.getTime() - now.getTime() : undefined,
+        timeUntilEnd: status === 'live' ? endDate.getTime() - now.getTime() : undefined,
+        startDate,
+        endDate
+      };
+      
+    } catch (error) {
+      console.error('STREAMING: Error checking event timing:', error);
+      // Fallback: allow streaming (fail open)
+      return {
+        canStream: true,
+        status: 'live',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 60 * 60 * 1000) // 1 hour from now
+      };
+    }
+  }
+
+  /**
+   * Get stream URLs with timing validation
+   */
+  async getStreamUrlsWithTiming(eventId: string): Promise<{
+    streamUrls: StreamSession;
+    eventRoomUrl: string;
+    timing: {
+      canStream: boolean;
+      status: 'upcoming' | 'live' | 'ended';
+      timeUntilStart?: number;
+      timeUntilEnd?: number;
+      startDate: Date;
+      endDate: Date;
+    };
+    isLive: boolean;
+    available: boolean;
+  }> {
+    console.log('STREAMING: Getting stream URLs with blockchain timing validation');
+    
+    const [streamUrls, timing, liveStatus] = await Promise.all([
+      Promise.resolve(this.generateStreamUrls(eventId)),
+      this.checkEventTiming(eventId),
+      this.checkStreamStatus(eventId)
+    ]);
+    
+    return {
+      streamUrls,
+      eventRoomUrl: this.generateEventRoomUrl(eventId),
+      timing,
+      isLive: liveStatus.isLive,
+      available: timing.canStream || timing.status === 'upcoming' // Available if can stream or upcoming
+    };
+  }
+
+  /**
+   * Get stream information directly
+   */
+  async getStreamInfo(eventId: string): Promise<{
+    streamUrls: StreamSession;
+    eventRoomUrl: string;
+    isLive: boolean;
+    available: boolean;
+  }> {
+    console.log('STREAMING: Getting stream info directly for event', eventId);
+    
+    const streamUrls = this.generateStreamUrls(eventId);
+    const status = await this.checkStreamStatus(eventId);
+    
+    return {
+      streamUrls,
+      eventRoomUrl: this.generateEventRoomUrl(eventId),
+      isLive: status.isLive,
+      available: status.available
     };
   }
 
@@ -68,20 +269,17 @@ class StreamingService {
         constraints || defaultConstraints
       );
 
-      console.log('STREAMING: Got user media stream');
-
       // Generate stream URLs
-      const streamSession = this.generateStreamUrls(eventId);
+      const streamUrls = this.generateStreamUrls(eventId);
       
-      // Set up WebRTC connection
-      const config: RTCConfiguration = {
+      // Set up WebRTC connection for WHIP (WebRTC-HTTP Ingestion Protocol)
+      this.peerConnection = new RTCPeerConnection({
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      };
-
-      this.peerConnection = new RTCPeerConnection(config);
+        ],
+        bundlePolicy: 'max-bundle'
+      });
 
       // Add stream tracks to peer connection
       this.currentStream.getTracks().forEach(track => {
@@ -90,29 +288,17 @@ class StreamingService {
         }
       });
 
-      // Handle ICE candidates
-      this.peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          console.log('STREAMING: ICE candidate:', event.candidate);
-        }
-      };
-
-      // Create offer and set local description
+      // Create offer and send to SRS via WHIP
       const offer = await this.peerConnection.createOffer();
       await this.peerConnection.setLocalDescription(offer);
-
-      console.log('STREAMING: Created offer:', offer);
-
-      // Send offer to SRS via WHIP
-      await this.sendOfferToSRS(streamSession.whipUrl, offer);
+      await this.sendOfferToSRS(streamUrls.whipUrl, offer);
 
       console.log('STREAMING: Successfully started publishing');
-      return streamSession;
+      return streamUrls;
 
     } catch (error) {
       console.error('STREAMING: Error starting publishing:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      throw new Error(`Failed to start publishing: ${errorMessage}`);
+      throw new Error(`Failed to start publishing: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -126,17 +312,16 @@ class StreamingService {
       this.videoElement = videoElement;
       
       // Generate stream URLs
-      const streamSession = this.generateStreamUrls(eventId);
+      const streamUrls = this.generateStreamUrls(eventId);
       
-      // Set up WebRTC connection for receiving
-      const config: RTCConfiguration = {
+      // Set up WebRTC connection for WHEP (WebRTC-HTTP Egress Protocol)
+      this.peerConnection = new RTCPeerConnection({
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      };
-
-      this.peerConnection = new RTCPeerConnection(config);
+        ],
+        bundlePolicy: 'max-bundle'
+      });
 
       // Handle incoming stream
       this.peerConnection.ontrack = (event) => {
@@ -146,63 +331,20 @@ class StreamingService {
         }
       };
 
-      // Handle ICE candidates
-      this.peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          console.log('STREAMING: ICE candidate:', event.candidate);
-        }
-      };
-
-      // Create offer for receiving stream
+      // Create offer for receiving stream via WHEP
+      this.peerConnection.addTransceiver('video', { direction: 'recvonly' });
+      this.peerConnection.addTransceiver('audio', { direction: 'recvonly' });
+      
       const offer = await this.peerConnection.createOffer();
       await this.peerConnection.setLocalDescription(offer);
-
-      // Send offer to SRS via WHEP
-      await this.sendOfferToSRS(streamSession.whepUrl, offer);
+      await this.sendOfferToSRS(streamUrls.whepUrl, offer);
 
       console.log('STREAMING: Successfully started playing');
-      return streamSession;
+      return streamUrls;
 
     } catch (error) {
       console.error('STREAMING: Error starting playback:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      throw new Error(`Failed to start playback: ${errorMessage}`);
-    }
-  }
-
-  /**
-   * Send offer to SRS server via WHIP/WHEP
-   */
-  private async sendOfferToSRS(url: string, offer: RTCSessionDescriptionInit): Promise<void> {
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/sdp',
-          'Accept': 'application/sdp'
-        },
-        body: offer.sdp
-      });
-
-      if (!response.ok) {
-        throw new Error(`SRS server responded with status: ${response.status}`);
-      }
-
-      const answerSdp = await response.text();
-      const answer: RTCSessionDescriptionInit = {
-        type: 'answer',
-        sdp: answerSdp
-      };
-
-      if (this.peerConnection) {
-        await this.peerConnection.setRemoteDescription(answer);
-      }
-
-      console.log('STREAMING: Successfully exchanged SDP with SRS');
-
-    } catch (error) {
-      console.error('STREAMING: Error sending offer to SRS:', error);
-      throw error;
+      throw new Error(`Failed to start playback: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -215,9 +357,7 @@ class StreamingService {
 
       // Stop all tracks
       if (this.currentStream) {
-        this.currentStream.getTracks().forEach(track => {
-          track.stop();
-        });
+        this.currentStream.getTracks().forEach(track => track.stop());
         this.currentStream = null;
       }
 
@@ -286,294 +426,41 @@ class StreamingService {
   }
 
   /**
-   * Check if stream is live
+   * Send offer to SRS server via WHIP/WHEP (private method)
    */
-  async checkStreamStatus(eventId: string): Promise<boolean> {
+  private async sendOfferToSRS(url: string, offer: RTCSessionDescriptionInit): Promise<void> {
     try {
-      // Use production backend URL or fallback to localhost for development
-      const backendUrl = process.env.NODE_ENV === 'production' 
-        ? 'https://room.haus25.live/api'
-        : 'http://localhost:3001';
-
-      // First try backend service
-      const backendResponse = await fetch(`${backendUrl}/stream/${eventId}/status`);
-      if (backendResponse.ok) {
-        const backendData = await backendResponse.json();
-        console.log('STREAMING: Stream status from backend:', backendData);
-        return backendData.isLive;
-      }
-
-      console.log('STREAMING: Backend unavailable, checking SRS directly');
-      
-      // Fallback to direct SRS check
-      const response = await fetch(`https://${this.srsBaseUrl}:1985/api/v1/streams/`);
-      const data = await response.json();
-      
-      // Check if stream exists for this event
-      const streamExists = data.streams?.some((stream: any) => 
-        stream.app === 'live' && stream.stream === eventId
-      );
-
-      return streamExists || false;
-
-    } catch (error) {
-      console.error('STREAMING: Error checking stream status:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Reserve stream URL for event (called during event creation)
-   * Communicates with backend stream service
-   */
-  async reserveStreamUrl(eventId: string, startTime: string, duration: number): Promise<{
-    reserved: boolean;
-    streamUrls: StreamSession;
-    eventRoomUrl: string;
-  }> {
-    try {
-      console.log('STREAMING: Reserving stream URLs for event', eventId);
-
-      // Use production backend URL or fallback to localhost for development
-      const backendUrl = process.env.NODE_ENV === 'production' 
-        ? 'https://room.haus25.live/api'
-        : 'http://localhost:3001';
-
-      // Call backend to reserve stream
-      const response = await fetch(`${backendUrl}/stream/reserve`, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/sdp',
+          'Accept': 'application/sdp'
         },
-        body: JSON.stringify({
-          eventId,
-          startTime,
-          duration
-        })
+        body: offer.sdp
       });
 
       if (!response.ok) {
-        throw new Error(`Backend responded with status: ${response.status}`);
+        throw new Error(`SRS server responded with status: ${response.status}`);
       }
 
-      const result = await response.json();
-
-      console.log('STREAMING: Stream URLs reserved successfully via backend');
-
-      return {
-        reserved: result.success,
-        streamUrls: result.streamUrls,
-        eventRoomUrl: result.eventRoomUrl
+      const answerSdp = await response.text();
+      const answer: RTCSessionDescriptionInit = {
+        type: 'answer',
+        sdp: answerSdp
       };
 
-    } catch (error) {
-      console.error('STREAMING: Error reserving stream URLs:', error);
-      // Fallback to direct URL generation if backend is unavailable
-      console.log('STREAMING: Falling back to direct URL generation');
-      
-      const streamUrls = this.generateStreamUrls(eventId);
-      const eventRoomUrl = `${this.eventRoomUrl}/${eventId}`;
-
-      return {
-        reserved: true,
-        streamUrls,
-        eventRoomUrl
-      };
-    }
-  }
-
-  /**
-   * Get stream information for an event
-   * Generates URLs dynamically since no reservation storage needed
-   */
-  getReservedStream(eventId: string): {
-    streamUrls: StreamSession;
-    eventRoomUrl: string;
-  } {
-    return {
-      streamUrls: this.generateStreamUrls(eventId),
-      eventRoomUrl: `${this.eventRoomUrl}/${eventId}`
-    };
-  }
-
-  /**
-   * Get comprehensive stream information from backend
-   */
-  async getStreamInfo(eventId: string): Promise<{
-    streamUrls: StreamSession;
-    eventRoomUrl: string;
-    isLive: boolean;
-  }> {
-    try {
-      console.log('STREAMING: Getting stream info from backend for event', eventId);
-
-      // Use production backend URL or fallback to localhost for development
-      const backendUrl = process.env.NODE_ENV === 'production' 
-        ? 'https://room.haus25.live/api'
-        : 'http://localhost:3001';
-
-      const response = await fetch(`${backendUrl}/stream/${eventId}`);
-      if (response.ok) {
-        const result = await response.json();
-        console.log('STREAMING: Stream info from backend:', result);
-        
-        // Also check live status
-        const isLive = await this.checkStreamStatus(eventId);
-        
-        return {
-          streamUrls: result.streamUrls,
-          eventRoomUrl: result.eventRoomUrl,
-          isLive
-        };
+      if (this.peerConnection) {
+        await this.peerConnection.setRemoteDescription(answer);
       }
 
-      console.log('STREAMING: Backend unavailable, using fallback');
-      
-      // Fallback to direct generation
-      const streamInfo = this.getReservedStream(eventId);
-      const isLive = await this.checkStreamStatus(eventId);
-      
-      return {
-        ...streamInfo,
-        isLive
-      };
+      console.log('STREAMING: Successfully exchanged SDP with SRS');
 
     } catch (error) {
-      console.error('STREAMING: Error getting stream info:', error);
-      
-      // Final fallback
-      const streamInfo = this.getReservedStream(eventId);
-      return {
-        ...streamInfo,
-        isLive: false
-      };
-    }
-  }
-
-  /**
-   * Check if an event room is still available (hasn't expired)
-   */
-  async checkEventAvailability(eventId: string): Promise<{
-    available: boolean;
-    isActive: boolean;
-    hasEnded: boolean;
-    startTime?: string;
-    duration?: number;
-    message: string;
-  }> {
-    try {
-      console.log('STREAMING: Checking event availability for', eventId);
-
-      // Use production backend URL or fallback to localhost for development
-      const backendUrl = process.env.NODE_ENV === 'production' 
-        ? 'https://room.haus25.live/api'
-        : 'http://localhost:3001';
-
-      const response = await fetch(`${backendUrl}/stream/${eventId}/availability`);
-      
-      if (response.status === 404) {
-        return {
-          available: false,
-          isActive: false,
-          hasEnded: false,
-          message: 'Event not found or never reserved'
-        };
-      }
-
-      if (!response.ok) {
-        throw new Error(`Backend responded with status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      console.log('STREAMING: Event availability result:', result);
-
-      return {
-        available: result.available,
-        isActive: result.isActive,
-        hasEnded: result.hasEnded,
-        startTime: result.startTime,
-        duration: result.duration,
-        message: result.message
-      };
-
-    } catch (error) {
-      console.error('STREAMING: Error checking event availability:', error);
-      // Fallback to assume available if backend is unavailable
-      return {
-        available: true,
-        isActive: false,
-        hasEnded: false,
-        message: 'Could not verify event status - proceeding with caution'
-      };
-    }
-  }
-
-  /**
-   * Check if stream is currently live and event is available
-   */
-  async checkStreamAndEventStatus(eventId: string): Promise<{
-    isLive: boolean;
-    available: boolean;
-    isActive: boolean;
-    hasEnded: boolean;
-    eventData?: any;
-    message: string;
-  }> {
-    try {
-      console.log('STREAMING: Checking stream and event status for', eventId);
-
-      // Use production backend URL or fallback to localhost for development
-      const backendUrl = process.env.NODE_ENV === 'production' 
-        ? 'https://room.haus25.live/api'
-        : 'http://localhost:3001';
-
-      const response = await fetch(`${backendUrl}/stream/${eventId}/status`);
-      
-      if (!response.ok) {
-        throw new Error(`Backend responded with status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      console.log('STREAMING: Stream and event status result:', result);
-
-      return {
-        isLive: result.isLive,
-        available: result.available,
-        isActive: result.isActive,
-        hasEnded: result.hasEnded,
-        eventData: result.eventData,
-        message: result.message
-      };
-
-    } catch (error) {
-      console.error('STREAMING: Error checking stream status:', error);
-      // Fallback behavior
-      return {
-        isLive: false,
-        available: true,
-        isActive: false,
-        hasEnded: false,
-        message: 'Could not verify stream status'
-      };
-    }
-  }
-
-  /**
-   * Check if stream is currently live (legacy method for backward compatibility)
-   */
-  async isStreamLive(eventId: string): Promise<boolean> {
-    try {
-      const status = await this.checkStreamAndEventStatus(eventId);
-      return status.isLive && status.available;
-    } catch (error) {
-      console.error('STREAMING: Error checking stream status:', error);
-      return false;
+      console.error('STREAMING: Error sending offer to SRS:', error);
+      throw error;
     }
   }
 }
 
 // Create singleton instance
 export const streamingService = new StreamingService();
-
-// Helper function to create streaming service
-export const createStreamingService = () => streamingService;

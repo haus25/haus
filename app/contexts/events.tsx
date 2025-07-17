@@ -1,7 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { fetchOnChainEvents, OnChainEventData } from '../services/onChainEvents'
+import { fetchOnChainEvents, OnChainEventData } from '../services/tickets'
 
 interface EventsContextType {
   events: OnChainEventData[]

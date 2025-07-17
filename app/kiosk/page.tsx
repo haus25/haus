@@ -12,12 +12,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Breadcrumbs } from "../components/breadcrumbs"
 import { RecentlyViewed } from "../components/recentlyViewed"
 import { TooltipHelper } from "../components/tooltipHelper"
-import { QuickAccess } from "../components/quickAccess"
+import { QuickAccess } from "../contexts/auth"
 import { useEvents } from "../contexts/events"
 import { useAuth } from "../contexts/auth"
 import { useWalletClient } from 'wagmi'
 import { toast } from "sonner"
-import { createTicketPurchaseService } from "../services/buyTicket"
+import { createTicketPurchaseService } from "../services/tickets"
 
 type Category =
   | "standup-comedy"
@@ -488,7 +488,7 @@ export default function TicketKiosk() {
                       }
                     </p>
                     {events.length === 0 && (
-                      <Button onClick={() => router.push('/event-factory')}>
+                      <Button onClick={() => router.push('/factory')}>
                         Create First Event
                       </Button>
                     )}

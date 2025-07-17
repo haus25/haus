@@ -9,25 +9,37 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar"
 import { Badge } from "../components/ui/badge"
 import { Breadcrumbs } from "../components/breadcrumbs"
-import { QuickAccess } from "../components/quickAccess"
-import { User, Calendar, Ticket, Settings, Loader2, RefreshCw } from "lucide-react"
+import { QuickAccess } from "../contexts/auth"
+import { SettingsModal } from "../components/settings"
+import { 
+  User, 
+  Calendar, 
+  Ticket, 
+  Edit, 
+  Loader2, 
+  RefreshCw,
+  MapPin,
+  Heart,
+  Globe
+} from "lucide-react"
 import { useAuth } from "../contexts/auth"
 import { useEvents } from "../contexts/events"
-import { fetchUserTickets } from "../services/onChainEvents"
+import { fetchUserTickets } from "../services/tickets"
+import { SUPPORTED_SOCIAL_PLATFORMS } from "../lib/constants"
 
 export default function ProfilePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { userProfile, isConnected } = useAuth()
   const { events, loading: eventsLoading } = useEvents()
-  const [activeTab, setActiveTab] = useState("overview")
+  const [activeTab, setActiveTab] = useState("info")
   const [userTickets, setUserTickets] = useState<any[]>([])
   const [ticketsLoading, setTicketsLoading] = useState(false)
 
   // Get active tab from URL parameters
   useEffect(() => {
     const tab = searchParams.get("tab")
-    if (tab && ["overview", "events", "tickets", "settings"].includes(tab)) {
+    if (tab && ["info", "events", "tickets"].includes(tab)) {
       setActiveTab(tab)
     }
   }, [searchParams])
@@ -61,6 +73,28 @@ export default function ProfilePage() {
     const url = new URL(window.location.href)
     url.searchParams.set("tab", value)
     router.replace(url.pathname + url.search)
+  }
+
+  const handleStartLivestream = async (event: any) => {
+    try {
+      console.log('PROFILE: Starting livestream for event', event.contractEventId)
+      
+      // Import streaming service
+      const { streamingService } = await import('../services/streaming')
+      
+      // Get stream information for this event
+      const streamInfo = await streamingService.getStreamInfo(event.contractEventId.toString())
+      
+      console.log('PROFILE: Stream info:', streamInfo)
+      
+      // Navigate to event room as creator with streaming capabilities
+      router.push(`/room/${event.contractEventId}?isCreator=true`)
+      
+    } catch (error) {
+      console.error('PROFILE: Error starting livestream:', error)
+      // Still navigate to event room even if stream setup fails
+      router.push(`/room/${event.contractEventId}?isCreator=true`)
+    }
   }
 
   if (!isConnected || !userProfile) {
@@ -97,6 +131,10 @@ export default function ProfilePage() {
     return `#${ticketNumber}/${totalTickets}`
   }
 
+  const getSocialCount = () => {
+    return Object.values(userProfile.socials || {}).filter(Boolean).length
+  }
+
   return (
     <div className="min-h-screen flex flex-col texture-bg">
       <Navbar />
@@ -105,129 +143,189 @@ export default function ProfilePage() {
       <main className="flex-1 container py-12">
         <Breadcrumbs items={[{ label: "Profile" }]} />
 
+        {/* Profile Header */}
         <div className="mb-8">
-          <div className="flex items-center space-x-4">
-            <Avatar className="h-16 w-16">
-              <AvatarImage src={userProfile.avatar || undefined} alt={userProfile.name} />
-              <AvatarFallback>
-                <User className="h-8 w-8" />
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <h1 className="text-3xl font-bold">{userProfile.displayName || userProfile.name}</h1>
-              <p className="text-muted-foreground">{userProfile.address}</p>
-              {userProfile.bio && <p className="text-sm mt-1">{userProfile.bio}</p>}
+          <div className="relative">
+            {/* Banner */}
+            {userProfile.banner && (
+              <div 
+                className="h-48 rounded-lg bg-cover bg-center mb-4"
+                style={{ backgroundImage: `url(${userProfile.banner})` }}
+              />
+            )}
+            
+            {/* Profile Info */}
+            <div className="flex items-end justify-between">
+              <div className="flex items-center space-x-4">
+                <Avatar className="h-20 w-20 border-4 border-background">
+                  <AvatarImage src={userProfile.avatar || undefined} alt={userProfile.name} />
+                  <AvatarFallback>
+                    <User className="h-10 w-10" />
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <h1 className="text-3xl font-bold">{userProfile.displayName || userProfile.name}</h1>
+                  <p className="text-muted-foreground">@{userProfile.name}</p>
+                  {userProfile.bio && (
+                    <p className="text-sm mt-2 max-w-md">{userProfile.bio}</p>
+                  )}
+                </div>
+              </div>
+              
+              {/* Edit Button */}
+              <SettingsModal>
+                <Button variant="outline">
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit Profile
+                </Button>
+              </SettingsModal>
             </div>
           </div>
         </div>
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-8">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="overview" className="flex items-center space-x-2">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="info" className="flex items-center space-x-2">
               <User className="h-4 w-4" />
-              <span>Overview</span>
+              <span>Info</span>
             </TabsTrigger>
             <TabsTrigger value="events" className="flex items-center space-x-2">
               <Calendar className="h-4 w-4" />
-              <span>My Events ({userEvents.length})</span>
+              <span>Your Events ({userEvents.length})</span>
             </TabsTrigger>
             <TabsTrigger value="tickets" className="flex items-center space-x-2">
               <Ticket className="h-4 w-4" />
-              <span>My Tickets ({userTickets.length})</span>
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="flex items-center space-x-2">
-              <Settings className="h-4 w-4" />
-              <span>Settings</span>
+              <span>Your Tickets ({userTickets.length})</span>
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="overview" className="space-y-6">
-            <div className="grid gap-6 md:grid-cols-3">
+          {/* Info Tab */}
+          <TabsContent value="info" className="space-y-6">
+            <div className="grid gap-6 md:grid-cols-2">
+              {/* Profile Details */}
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Events Created</CardTitle>
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                <CardHeader>
+                  <CardTitle>Profile Details</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{userEvents.length}</div>
-                  <p className="text-xs text-muted-foreground">Total events organized</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Tickets Purchased</CardTitle>
-                  <Ticket className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{userTickets.length}</div>
-                  <p className="text-xs text-muted-foreground">Events attended</p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Spent</CardTitle>
-                  <User className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {userTickets.reduce((total, ticket) => total + ticket.purchasePrice, 0).toFixed(2)} SEI
+                <CardContent className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Username</label>
+                    <p className="font-medium">@{userProfile.name}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground">On event tickets</p>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Display Name</label>
+                    <p className="font-medium">{userProfile.displayName || userProfile.name}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Bio</label>
+                    <p className="text-sm">{userProfile.bio || "No bio set"}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Wallet Address</label>
+                    <p className="font-mono text-xs break-all">{userProfile.address}</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Preferences */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Preferences</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Favorite Categories</label>
+                    {userProfile.preferences && userProfile.preferences.length > 0 ? (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {userProfile.preferences.map((category) => (
+                          <Badge key={category} variant="secondary">
+                            {category.replace(/-/g, " ")}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground mt-2">No preferences set</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Social Links */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Globe className="h-4 w-4 mr-2" />
+                    Social Links ({getSocialCount()})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {getSocialCount() > 0 ? (
+                    <div className="space-y-3">
+                      {Object.entries(userProfile.socials || {}).map(([platform, username]) => {
+                        if (!username) return null
+                        const config = SUPPORTED_SOCIAL_PLATFORMS[platform as keyof typeof SUPPORTED_SOCIAL_PLATFORMS]
+                        if (!config) return null
+                        
+                        return (
+                          <div key={platform} className="flex items-center justify-between">
+                            <span className="text-sm font-medium">{config.name}</span>
+                            <a 
+                              href={platform === 'website' ? 
+                                (username.startsWith('http') ? username : `https://${username}`) :
+                                `${config.baseUrl}${username.replace('@', '')}`
+                              }
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-primary hover:underline"
+                            >
+                              {platform === 'website' ? username : `@${username.replace('@', '')}`}
+                            </a>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No social links added</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Statistics */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Statistics</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">Events Created</span>
+                    <Badge variant="secondary">{userEvents.length}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">Tickets Purchased</span>
+                    <Badge variant="secondary">{userTickets.length}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">Total Spent</span>
+                    <Badge variant="secondary">
+                      {userTickets.reduce((total, ticket) => total + ticket.purchasePrice, 0).toFixed(2)} SEI
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">Profile Completeness</span>
+                    <Badge variant={userProfile.isProfileComplete ? "default" : "secondary"}>
+                      {userProfile.isProfileComplete ? "Complete" : "Incomplete"}
+                    </Badge>
+                  </div>
                 </CardContent>
               </Card>
             </div>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Recent Activity</CardTitle>
-                <CardDescription>Your latest events and ticket purchases</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {userTickets.slice(0, 3).map((ticket) => (
-                    <div key={`${ticket.kioskAddress}-${ticket.ticketId}`} className="flex items-center space-x-4">
-                      <Ticket className="h-4 w-4 text-muted-foreground" />
-                      <div className="flex-1">
-                        <p className="font-medium">Purchased {ticket.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {formatTicketNumber(ticket.ticketNumber, ticket.totalTickets)} • {ticket.purchasePrice} SEI
-                        </p>
-                      </div>
-                      <Badge variant="outline">
-                        {new Date(ticket.purchaseTimestamp * 1000).toLocaleDateString()}
-                      </Badge>
-                    </div>
-                  ))}
-
-                  {userEvents.slice(0, 2).map((event: any) => (
-                    <div key={event.id} className="flex items-center space-x-4">
-                      <Calendar className="h-4 w-4 text-muted-foreground" />
-                      <div className="flex-1">
-                        <p className="font-medium">Created "{event.title}"</p>
-                        <p className="text-sm text-muted-foreground">
-                          {event.participants}/{event.maxParticipants} participants • {formatDate(event.date)}
-                        </p>
-                      </div>
-                      <Badge variant={event.status === "live" ? "default" : "secondary"}>
-                        {event.status}
-                      </Badge>
-                    </div>
-                  ))}
-
-                  {userTickets.length === 0 && userEvents.length === 0 && (
-                    <p className="text-muted-foreground text-center py-4">No recent activity</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
           </TabsContent>
 
+          {/* Events Tab */}
           <TabsContent value="events" className="space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold">My Events</h2>
-              <Button onClick={() => router.push("/event-factory")}>Create New Event</Button>
+              <h2 className="text-2xl font-bold">Your Events</h2>
+              <Button onClick={() => router.push("/factory")}>Create New Event</Button>
             </div>
 
             {eventsLoading ? (
@@ -267,6 +365,26 @@ export default function ProfilePage() {
                           </Badge>
                         </div>
                       </div>
+                      <div className="flex gap-2 mt-4">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => router.push(`/room/${event.contractEventId}?isCreator=true`)}
+                          className="flex-1"
+                        >
+                          Event Room
+                        </Button>
+                        {event.status !== 'completed' && (
+                          <Button 
+                            size="sm" 
+                            onClick={() => handleStartLivestream(event)}
+                            className="flex-1"
+                            disabled={event.status === 'live'}
+                          >
+                            {event.status === 'live' ? 'Live' : 'Start Stream'}
+                          </Button>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
                 ))}
@@ -279,21 +397,22 @@ export default function ProfilePage() {
                   <p className="text-muted-foreground mb-6">
                     You haven't created any events yet. Start by creating your first event!
                   </p>
-                  <Button onClick={() => router.push("/event-factory")}>Create Your First Event</Button>
+                  <Button onClick={() => router.push("/factory")}>Create Your First Event</Button>
                 </CardContent>
               </Card>
             )}
           </TabsContent>
 
+          {/* Tickets Tab */}
           <TabsContent value="tickets" className="space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold">My Tickets</h2>
+              <h2 className="text-2xl font-bold">Your Tickets</h2>
               <div className="flex space-x-2">
                 <Button variant="outline" onClick={loadUserTickets} disabled={ticketsLoading}>
                   <RefreshCw className={`h-4 w-4 mr-2 ${ticketsLoading ? 'animate-spin' : ''}`} />
                   Refresh
                 </Button>
-                <Button onClick={() => router.push("/ticket-kiosk")}>Browse Events</Button>
+                <Button onClick={() => router.push("/kiosk")}>Browse Events</Button>
               </div>
             </div>
 
@@ -310,12 +429,7 @@ export default function ProfilePage() {
                   
                   const handleTicketClick = () => {
                     // Redirect to event room with ticket information
-                    const params = new URLSearchParams({
-                      eventId: ticket.eventId.toString(),
-                      ticketId: ticket.ticketId.toString(),
-                      isCreator: 'false'
-                    })
-                    router.push(`/event-room?${params.toString()}`)
+                    router.push(`/room/${ticket.eventId}?ticketId=${ticket.ticketId}&isCreator=false`)
                   }
                   
                   return (
@@ -332,7 +446,6 @@ export default function ProfilePage() {
                             className="w-full h-full object-cover" 
                           />
                         </div>
-                        {/* Progressive ID Badge */}
                         <div className="absolute bottom-2 right-2 bg-black/70 text-white px-2 py-1 rounded-md text-xs font-mono">
                           #{ticket.eventId}
                         </div>
@@ -390,38 +503,10 @@ export default function ProfilePage() {
                   <p className="text-muted-foreground mb-6">
                     You haven't purchased any event tickets yet. Browse available events to get started!
                   </p>
-                  <Button onClick={() => router.push("/ticket-kiosk")}>Browse Events</Button>
+                  <Button onClick={() => router.push("/kiosk")}>Browse Events</Button>
                 </CardContent>
               </Card>
             )}
-          </TabsContent>
-
-          <TabsContent value="settings" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Profile Settings</CardTitle>
-                <CardDescription>Manage your profile information and preferences</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium">Wallet Address</label>
-                    <p className="text-sm text-muted-foreground font-mono">{userProfile.address}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Username</label>
-                    <p className="text-sm text-muted-foreground">{userProfile.displayName || userProfile.name}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Bio</label>
-                    <p className="text-sm text-muted-foreground">{userProfile.bio || "No bio set"}</p>
-                  </div>
-                </div>
-                <Button className="mt-6" variant="outline">
-                  Edit Profile (Coming Soon)
-                </Button>
-              </CardContent>
-            </Card>
           </TabsContent>
         </Tabs>
       </main>

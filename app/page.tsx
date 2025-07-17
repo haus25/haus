@@ -10,43 +10,26 @@ import { TvPlayer } from "./components/tvPlayer"
 import { Web3InnovationGraphic } from "./components/web3Innovation"
 import { Eye, DollarSign, Zap, Clock, Sparkles, Layers } from "lucide-react"
 import { useAuth } from "./contexts/auth"
-import { LoginModal } from "./components/loginModal"
 import { HIDDEN_MESSAGE_1 } from "./lib/constants"
 
 // Lazy load components that aren't needed immediately
 const RtaInfoModal = lazy(() => import("./components/rtaInfo").then((mod) => ({ default: mod.RtaInfoModal })))
-const QuickAccess = lazy(() => import("./components/quickAccess").then((mod) => ({ default: mod.QuickAccess })))
+const QuickAccess = lazy(() => import("./contexts/auth").then((mod) => ({ default: mod.QuickAccess })))
 
 // Loading fallback
 const LoadingFallback = () => <div className="hidden">Loading...</div>
 
 export default function Home() {
   const router = useRouter()
-  const { isConnected, hasInviteAccess } = useAuth()
+  const { isConnected } = useAuth()
   const [showRtaModal, setShowRtaModal] = useState(false)
-  const [showLoginModal, setShowLoginModal] = useState(false)
-  const [currentRedirectPath, setCurrentRedirectPath] = useState("/ticket-kiosk")
 
   const handleConnect = (redirectPath?: string) => {
-    // If a redirect path is provided, use it
-    if (redirectPath) {
-      setCurrentRedirectPath(redirectPath)
-    }
-  }
-  const handleLoginSuccess = () => {
-    setShowLoginModal(false)
-    router.push("/ticket-kiosk")
+    // This function is for connecting wallet, handled by auth context
   }
 
   const handleNavigate = (path: string) => {
-    if (hasInviteAccess) {
-      if (isConnected) {
-        router.push(path)
-      } else {
-        setCurrentRedirectPath(path) // Store the path
-        setShowLoginModal(true)
-      }
-    }
+    router.push(path)
   }
 
   return (
@@ -76,11 +59,11 @@ export default function Home() {
                   <Button
                     size="lg"
                     className="bg-primary text-primary-foreground hover:bg-primary/90"
-                    onClick={() => handleNavigate("/ticket-kiosk")}
+                    onClick={() => handleNavigate("/kiosk")}
                   >
                     DISCOVER EVENTS
                   </Button>
-                  <Button size="lg" variant="outline" onClick={() => handleNavigate("/event-factory")}>
+                  <Button size="lg" variant="outline" onClick={() => handleNavigate("/factory")}>
                     CREATE EVENT
                   </Button>
                 </div>
@@ -307,7 +290,7 @@ export default function Home() {
               <p className="md:text-lg max-w-[700px]">
                 Join Haus today and become part of a community that values creativity and supports artists.
               </p>
-              <Button size="lg" variant="secondary" className="mt-4" onClick={handleConnect}>
+              <Button size="lg" variant="secondary" className="mt-4" onClick={() => handleConnect()}>
                 ENTER THE HAUS
               </Button>
             </div>
@@ -315,7 +298,7 @@ export default function Home() {
         </section>
       </main>
 
-      <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} redirectPath={currentRedirectPath} />
+
 
       {showRtaModal && (
         <Suspense fallback={<LoadingFallback />}>

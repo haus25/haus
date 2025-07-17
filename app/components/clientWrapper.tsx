@@ -4,7 +4,7 @@ import { ThemeProvider } from "./themeProvider"
 import { Footer } from "./footer"
 import { AuthProvider } from "../contexts/auth"
 import { EventsProvider } from "../contexts/events"
-import { AuthGuard } from "./authGuard"
+import { AuthGuard } from "../contexts/auth"
 
 interface ClientWrapperProps {
   children: React.ReactNode

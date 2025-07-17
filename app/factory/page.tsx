@@ -19,7 +19,7 @@ import { cn } from "../lib/utils"
 import { format } from "date-fns"
 import { X, CalendarIcon, Clock, Plus, Loader2 } from "lucide-react"
 import { Breadcrumbs } from "../components/breadcrumbs"
-import { QuickAccess } from "../components/quickAccess"
+import { QuickAccess } from "../contexts/auth"
 import { useAuth } from "../contexts/auth"
 import { useEvents } from "../contexts/events"
 import { createEventFactoryService, type EventFormData } from "../services/create"
@@ -40,7 +40,7 @@ type Duration = 15 | 30 | 60
 export default function EventFactory() {
   const router = useRouter()
   const { userProfile, isConnected } = useAuth()
-  const { addEvent } = useEvents()
+  const { refreshEvents } = useEvents()
   const { data: walletClient, error: walletClientError } = useWalletClient()
 
   const [step, setStep] = useState<Step>("details")
@@ -203,94 +203,21 @@ export default function EventFactory() {
       console.log("EVENT_CREATION: TicketKiosk address:", contractEventData.ticketKioskAddress)
       console.log("EVENT_CREATION: Metadata URI:", contractEventData.metadataURI)
 
-      // Step 4: Reserve streaming URL
-      updateCreationProgress("Reserving streaming URL")
-      console.log("EVENT_CREATION: Reserving streaming URL for live event")
-      
-      const eventDate = formData.date ? 
-        new Date(
-          formData.date.setHours(
-            Number.parseInt(formData.time.split(":")[0]),
-            Number.parseInt(formData.time.split(":")[1]),
-          ),
-        ) : new Date()
+      // Stream URL is now reserved inside create.ts service
+      console.log("EVENT_CREATION: Stream URL reservation completed in service")
 
-      const streamReservation = await streamingService.reserveStreamUrl(
-        contractEventData.eventId.toString(),
-        eventDate.toISOString(),
-        formData.duration
-      )
-
-      console.log("EVENT_CREATION: Stream URL reserved:", streamReservation.eventRoomUrl)
-
-      // Step 5: Update local state
+      // Step 5: Update application state
       updateCreationProgress("Updating application state")
-      console.log("EVENT_CREATION: Creating local event object for state management")
+      console.log("EVENT_CREATION: Refreshing events to include newly created event")
       
-      // Get the uploaded Banner URL from the metadata
-      let eventImageUrl = "/placeholder.svg?height=200&width=400"
-      
-      try {
-        // Fetch the metadata from IPFS to get the actual image URL
-        const metadataUri = contractEventData.metadataURI
-        console.log("EVENT_CREATION: Fetching metadata from:", metadataUri)
-        
-        if (metadataUri.startsWith('ipfs://')) {
-          // Convert IPFS URI to gateway URL for fetching
-          const ipfsHash = metadataUri.slice(7) // Remove 'ipfs://' prefix
-          const gatewayUrl = `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${ipfsHash}`
-          
-          console.log("EVENT_CREATION: Fetching metadata from gateway:", gatewayUrl)
-          
-          const metadataResponse = await fetch(gatewayUrl)
-          if (metadataResponse.ok) {
-            const metadata = await metadataResponse.json()
-            if (metadata.image) {
-              eventImageUrl = metadata.image
-              console.log("EVENT_CREATION: Using image URL from metadata:", eventImageUrl)
-            }
-          } else {
-            console.warn("EVENT_CREATION: Failed to fetch metadata, using placeholder")
-          }
-        }
-      } catch (error) {
-        console.warn("EVENT_CREATION: Could not fetch metadata for image URL:", error)
-      }
-      
-      const localEvent = {
-        id: contractEventData.eventId.toString(),
-        title: formData.title,
-        creator: userProfile?.displayName || userProfile?.name || userProfile.address,
-        creatorAddress: userProfile.address,
-        category: formData.category,
-        date: formData.date
-          ? new Date(
-              formData.date.setHours(
-                Number.parseInt(formData.time.split(":")[0]),
-                Number.parseInt(formData.time.split(":")[1]),
-              ),
-            ).toISOString()
-          : new Date().toISOString(),
-        duration: formData.duration,
-        participants: 0,
-        maxParticipants: formData.noCap ? 1000 : formData.ticketsAmount,
-        ticketPrice: formData.ticketPrice,
-        description: formData.description || "No description provided",
-        image: eventImageUrl, // Use the actual IPFS URL instead of blob URL
-        status: "upcoming" as const,
-        contractEventId: contractEventData.eventId,
-        ticketKioskAddress: contractEventData.ticketKioskAddress,
-        txHash: contractEventData.txHash,
-        metadataURI: contractEventData.metadataURI,
-      }
-
-      addEvent(localEvent)
-      console.log("EVENT_CREATION: Event added to global application state")
+      // Refresh events to pick up the newly created event from blockchain
+      await refreshEvents()
+      console.log("EVENT_CREATION: Events refreshed to include newly created event")
 
       // Step 6: Complete
       setCreationProgress({
         currentStep: "Complete",
-        completedSteps: ["Initializing", "Preparing event data", "Executing blockchain transaction", "Reserving streaming URL", "Updating application state"],
+        completedSteps: ["Initializing service connection", "Preparing event data", "Executing blockchain transaction", "Updating application state"],
         txHash: contractEventData.txHash,
         eventId: contractEventData.eventId,
         ticketKioskAddress: contractEventData.ticketKioskAddress,
@@ -744,7 +671,6 @@ export default function EventFactory() {
                           "Initializing service connection",
                           "Preparing event data", 
                           "Executing blockchain transaction",
-                          "Reserving streaming URL",
                           "Updating application state"
                         ].map((stepName, index) => {
                           const isCompleted = creationProgress.completedSteps.includes(stepName)
@@ -830,8 +756,14 @@ export default function EventFactory() {
                   
                   <div className="flex flex-col sm:flex-row gap-3 justify-center">
                     <Button
-                      onClick={() => router.push("/ticket-kiosk")}
-                      className="bg-primary text-primary-foreground hover:bg-primary/90"
+                      onClick={() => router.push(`/room/${creationProgress.eventId}?isCreator=true`)}
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      Enter Event Room
+                    </Button>
+                    <Button
+                      onClick={() => router.push("/kiosk")}
+                      variant="outline"
                     >
                       View in Ticket Kiosk
                     </Button>

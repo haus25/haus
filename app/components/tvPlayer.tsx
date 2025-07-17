@@ -37,12 +37,12 @@ type Category =
 
 // Define destination paths for each category
 const CATEGORY_DESTINATIONS = {
-  "standup-comedy": "/ticket-kiosk?category=standup-comedy",
-  "performance-art": "/ticket-kiosk?category=performance-art",
-  "poetry-slam": "/ticket-kiosk?category=poetry-slam",
-  "open-mic": "/ticket-kiosk?category=open-mic",
-  "live-painting": "/ticket-kiosk?category=live-painting",
-  "creative-workshop": "/ticket-kiosk?category=creative-workshop",
+  "standup-comedy": "/kiosk?category=standup-comedy",
+  "performance-art": "/kiosk?category=performance-art",
+  "poetry-slam": "/kiosk?category=poetry-slam",
+  "open-mic": "/kiosk?category=open-mic",
+  "live-painting": "/kiosk?category=live-painting",
+  "creative-workshop": "/kiosk?category=creative-workshop",
 }
 
 // Memoize the component to prevent unnecessary re-renders

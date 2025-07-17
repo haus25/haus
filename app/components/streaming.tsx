@@ -11,25 +11,25 @@ import {
   VideoOff, 
   Mic, 
   MicOff, 
-  Monitor, 
   StopCircle, 
   PlayCircle,
   Loader2,
   AlertCircle,
   CheckCircle,
   Users,
-  Radio
+  Radio,
+  Crown
 } from 'lucide-react'
 import { streamingService, type StreamSession } from '../services/streaming'
-import { createTicketVerificationService } from '../services/ticketVerification'
+import { createTicketVerificationService } from '../services/tickets'
 import { useWalletClient } from 'wagmi'
 import { useAuth } from '../contexts/auth'
 import { toast } from 'sonner'
 
-interface WebRTCStreamingProps {
+interface StreamingProps {
   eventId: string
-  ticketKioskAddress?: string
   isCreator: boolean
+  ticketKioskAddress?: string
   eventStartTime: string
   eventDuration: number
   onStreamStatusChange?: (status: {
@@ -39,10 +39,10 @@ interface WebRTCStreamingProps {
   }) => void
 }
 
-export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
+export const Streaming: React.FC<StreamingProps> = ({
   eventId,
-  ticketKioskAddress,
   isCreator,
+  ticketKioskAddress,
   eventStartTime,
   eventDuration,
   onStreamStatusChange
@@ -61,7 +61,6 @@ export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
   // Creator controls
   const [isCameraOn, setIsCameraOn] = useState(true)
   const [isMicOn, setIsMicOn] = useState(true)
-  const [isScreenSharing, setIsScreenSharing] = useState(false)
   
   // Stream status
   const [viewerCount, setViewerCount] = useState(0)
@@ -122,6 +121,26 @@ export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
     }
   }, [streamStatus, viewerCount, hasAccess, onStreamStatusChange])
 
+  // Periodic status check for viewer count
+  useEffect(() => {
+    if (streamStatus === 'live') {
+      const interval = setInterval(async () => {
+        try {
+          const status = await streamingService.checkStreamStatus(eventId)
+          if (!status.isLive) {
+            setStreamStatus('offline')
+          }
+          // In a real implementation, viewer count would come from SRS API
+          setViewerCount(Math.floor(Math.random() * 100) + 1)
+        } catch (error) {
+          console.warn('Error checking stream status:', error)
+        }
+      }, 10000)
+
+      return () => clearInterval(interval)
+    }
+  }, [streamStatus, eventId])
+
   // Start streaming (Creator mode)
   const startStreaming = async () => {
     if (!isCreator || !userProfile) return
@@ -131,7 +150,7 @@ export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
       setStreamError(null)
       setStreamStatus('connecting')
 
-      console.log('WEBRTC_STREAMING: Starting stream for event', eventId)
+      console.log('STREAMING: Starting stream for event', eventId)
 
       const session = await streamingService.startPublishing(eventId, {
         video: isCameraOn ? {
@@ -149,11 +168,20 @@ export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
       setIsStreaming(true)
       setStreamStatus('live')
       
+      // Set video preview for creator
+      if (videoRef.current) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: isCameraOn,
+          audio: false // No audio feedback for creator preview
+        })
+        videoRef.current.srcObject = stream
+      }
+      
       toast.success('Stream started successfully!')
-      console.log('WEBRTC_STREAMING: Stream started:', session)
+      console.log('STREAMING: Stream started:', session)
 
     } catch (error) {
-      console.error('WEBRTC_STREAMING: Failed to start stream:', error)
+      console.error('STREAMING: Failed to start stream:', error)
       const errorMessage = error instanceof Error ? error.message : 'Failed to start stream'
       setStreamError(errorMessage)
       setStreamStatus('offline')
@@ -174,11 +202,16 @@ export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
       setIsStreaming(false)
       setStreamStatus('offline')
       
+      // Clear video preview
+      if (videoRef.current) {
+        videoRef.current.srcObject = null
+      }
+      
       toast.success('Stream stopped')
-      console.log('WEBRTC_STREAMING: Stream stopped')
+      console.log('STREAMING: Stream stopped')
 
     } catch (error) {
-      console.error('WEBRTC_STREAMING: Failed to stop stream:', error)
+      console.error('STREAMING: Failed to stop stream:', error)
       toast.error('Failed to stop stream')
     } finally {
       setIsConnecting(false)
@@ -194,17 +227,17 @@ export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
       setStreamError(null)
       setStreamStatus('connecting')
 
-      console.log('WEBRTC_STREAMING: Starting viewer for event', eventId)
+      console.log('STREAMING: Starting viewer for event', eventId)
 
       const session = await streamingService.startPlaying(eventId, videoRef.current)
       
       setStreamSession(session)
       setStreamStatus('live')
       
-      console.log('WEBRTC_STREAMING: Viewing started:', session)
+      console.log('STREAMING: Viewing started:', session)
 
     } catch (error) {
-      console.error('WEBRTC_STREAMING: Failed to start viewing:', error)
+      console.error('STREAMING: Failed to start viewing:', error)
       const errorMessage = error instanceof Error ? error.message : 'Failed to connect to stream'
       setStreamError(errorMessage)
       setStreamStatus('offline')
@@ -236,6 +269,7 @@ export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
     return new Date() >= endTime
   }
 
+  // Loading access verification
   if (isVerifyingAccess) {
     return (
       <Card className="w-full">
@@ -249,6 +283,7 @@ export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
     )
   }
 
+  // Access denied
   if (!hasAccess) {
     return (
       <Card className="w-full">
@@ -265,6 +300,7 @@ export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
     )
   }
 
+  // Event not started
   if (!hasEventStarted()) {
     const timeUntilStart = Math.max(0, new Date(eventStartTime).getTime() - new Date().getTime())
     const hours = Math.floor(timeUntilStart / (1000 * 60 * 60))
@@ -285,6 +321,7 @@ export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
     )
   }
 
+  // Event ended
   if (hasEventEnded()) {
     return (
       <Card className="w-full">
@@ -306,11 +343,17 @@ export const WebRTCStreaming: React.FC<WebRTCStreamingProps> = ({
           <CardTitle className="flex items-center gap-2">
             <Video className="h-5 w-5" />
             {isCreator ? 'Stream Control' : 'Live Stream'}
+            {isCreator && (
+              <Badge variant="outline" className="border-yellow-500 text-yellow-500">
+                <Crown className="h-3 w-3 mr-1" />
+                Creator
+              </Badge>
+            )}
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Badge variant={streamStatus === 'live' ? 'default' : 'secondary'}>
+            <Badge variant={streamStatus === 'live' ? 'default' : 'secondary'} className={streamStatus === 'live' ? 'bg-red-500 text-white animate-pulse' : ''}>
               {streamStatus === 'live' && <Radio className="h-3 w-3 mr-1 animate-pulse" />}
-              {streamStatus}
+              {streamStatus.toUpperCase()}
             </Badge>
             {streamStatus === 'live' && (
               <Badge variant="outline">

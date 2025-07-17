@@ -32,7 +32,7 @@ export function UserNav() {
             <AvatarImage src={userProfile.avatar || ""} alt={userProfile.displayName || ""} />
             <AvatarFallback>
               {userProfile.displayName?.slice(0, 2).toUpperCase() || 
-               userProfile.ensName?.slice(0, 2).toUpperCase() ||
+               userProfile.name?.slice(0, 2).toUpperCase() ||
                userProfile.address?.slice(2, 4).toUpperCase()}
             </AvatarFallback>
           </Avatar>
@@ -42,7 +42,7 @@ export function UserNav() {
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium leading-none">
-              {userProfile.displayName || userProfile.ensName || "Anonymous"}
+              {userProfile.displayName || userProfile.name || "Anonymous"}
             </p>
             <p className="text-xs leading-none text-muted-foreground">
               {userProfile.address?.slice(0, 6)}...{userProfile.address?.slice(-4)}
@@ -52,27 +52,21 @@ export function UserNav() {
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem asChild>
-            <Link href="/profile">
+            <Link href="/profile?tab=info">
               <User className="mr-2 h-4 w-4" />
               <span>Profile</span>
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
-            <Link href="/profile/events">
+            <Link href="/profile?tab=events">
               <Brush className="mr-2 h-4 w-4" />
               <span>Your Events</span>
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
-            <Link href="/profile/tickets">
+            <Link href="/profile?tab=tickets">
               <Ticket className="mr-2 h-4 w-4" />
               <span>Your Tickets</span>
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link href="/profile/wallet">
-              <Wallet className="mr-2 h-4 w-4" />
-              <span>Wallet</span>
             </Link>
           </DropdownMenuItem>
           <SettingsModal>

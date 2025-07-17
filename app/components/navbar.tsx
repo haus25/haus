@@ -12,7 +12,7 @@ import { useAuth } from "../contexts/auth"
 // Memoize the navbar to prevent unnecessary re-renders
 export const Navbar = memo(function Navbar() {
   const pathname = usePathname()
-  const { isConnected, hasInviteAccess } = useAuth()
+  const { isConnected } = useAuth()
 
   // Check if we're on the landing page
   const isLandingPage = pathname === "/"
@@ -26,14 +26,12 @@ export const Navbar = memo(function Navbar() {
     if (isLandingPage || isAuthFlow) {
       return (
         <>
-          {hasInviteAccess && (
-            <Link href="/event-factory">
-              <Button variant="outline" size="sm" className="hidden md:flex">
-                <Plus className="h-4 w-4 mr-2" />
-                Create
-              </Button>
-            </Link>
-          )}
+          <Link href="/factory">
+            <Button variant="outline" size="sm" className="hidden md:flex">
+              <Plus className="h-4 w-4 mr-2" />
+              Create
+            </Button>
+          </Link>
         </>
       )
     }
@@ -42,25 +40,25 @@ export const Navbar = memo(function Navbar() {
     return (
       <div className="hidden md:flex items-center space-x-4">
         <Link
-          href="/event-factory"
+          href="/factory"
           className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-            pathname.includes("/event-factory") ? "bg-primary/10 text-primary" : "hover:bg-secondary"
+            pathname.includes("/factory") ? "bg-primary/10 text-primary" : "hover:bg-secondary"
           }`}
         >
           Factory
         </Link>
         <Link
-          href="/ticket-kiosk"
+          href="/kiosk"
           className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-            pathname.includes("/ticket-kiosk") ? "bg-primary/10 text-primary" : "hover:bg-secondary"
+            pathname.includes("/kiosk") ? "bg-primary/10 text-primary" : "hover:bg-secondary"
           }`}
         >
           Kiosk
         </Link>
         <Link
-          href="/event-room"
+          href="/room"
           className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-            pathname.includes("/event-room") ? "bg-primary/10 text-primary" : "hover:bg-secondary"
+            pathname.includes("/room") ? "bg-primary/10 text-primary" : "hover:bg-secondary"
           }`}
         >
           Room

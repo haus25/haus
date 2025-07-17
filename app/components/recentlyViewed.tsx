@@ -26,21 +26,21 @@ export function RecentlyViewed() {
         id: 1,
         title: "Comedy Night with John Doe",
         category: "standup-comedy",
-        href: "/ticket-kiosk/1",
+        href: "/kiosk/1",
         timestamp: Date.now() - 1000 * 60 * 5, // 5 minutes ago
       },
       {
         id: 2,
         title: "Abstract Live Painting",
         category: "live-painting",
-        href: "/ticket-kiosk/2",
+        href: "/kiosk/2",
         timestamp: Date.now() - 1000 * 60 * 15, // 15 minutes ago
       },
       {
         id: 3,
         title: "Poetry Night: Urban Verses",
         category: "poetry-slam",
-        href: "/ticket-kiosk/3",
+        href: "/kiosk/3",
         timestamp: Date.now() - 1000 * 60 * 30, // 30 minutes ago
       },
     ]

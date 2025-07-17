@@ -3,6 +3,7 @@
 import { createPublicClient, createWalletClient, custom, formatEther, parseEther } from 'viem'
 import { seiTestnet, dateToUnixTimestamp, waitForTransaction } from '../lib/sei'
 import { getPinataService } from './pinata'
+import { streamingService } from './streaming'
 
 // Contract addresses from environment variables
 const CONTRACT_ADDRESSES = {
@@ -428,24 +429,35 @@ export class EventFactoryService {
         }
       }
 
-      // Summary of operations
-      console.log('CONTRACT_CALL: 🎉 Event creation summary:')
-      console.log('CONTRACT_CALL: - RTA NFT minted:', rtaNftMinted ? '✅' : '⚠️')
-      console.log('CONTRACT_CALL: - TicketKiosk deployed:', ticketKioskDeployed ? '✅' : '⚠️')
-      console.log('CONTRACT_CALL: - Transaction hash:', txHash)
-      console.log('CONTRACT_CALL: - Block number:', receipt.blockNumber.toString())
+      // Step 4: Reserve streaming URL
+              // Step 4: Generate streaming URLs directly (no backend needed)
+        console.log('CONTRACT_CALL: Step 4 - Generating streaming URLs directly')
+        
+        const streamUrls = streamingService.generateStreamUrls(expectedEventId.toString())
+        const eventRoomUrl = streamingService.generateEventRoomUrl(expectedEventId.toString())
 
-      return {
-        eventId: expectedEventId,
-        creator: eventData.creator,
-        startDate: Number(eventData.startDate),
-        eventDuration: Number(eventData.eventDuration),
-        reservePrice: formatEther(BigInt(eventData.reservePrice.toString())),
-        metadataURI: eventData.metadataURI,
-        artCategory: eventData.artCategory,
-        ticketKioskAddress: eventData.KioskAddress, // Note: property name is KioskAddress, not ticketKioskAddress
-        txHash
-      }
+        console.log('CONTRACT_CALL: Stream URLs generated:', streamUrls)
+        console.log('CONTRACT_CALL: Event room accessible at:', eventRoomUrl)
+
+        // Summary of operations
+        console.log('CONTRACT_CALL: 🎉 Event creation summary:')
+        console.log('CONTRACT_CALL: - RTA NFT minted:', rtaNftMinted ? '✅' : '⚠️')
+        console.log('CONTRACT_CALL: - TicketKiosk deployed:', ticketKioskDeployed ? '✅' : '⚠️')
+        console.log('CONTRACT_CALL: - Event room URL:', eventRoomUrl)
+        console.log('CONTRACT_CALL: - Transaction hash:', txHash)
+        console.log('CONTRACT_CALL: - Block number:', receipt.blockNumber.toString())
+
+        return {
+          eventId: expectedEventId,
+          creator: eventData.creator,
+          startDate: Number(eventData.startDate),
+          eventDuration: Number(eventData.eventDuration),
+          reservePrice: formatEther(BigInt(eventData.reservePrice.toString())),
+          metadataURI: eventData.metadataURI,
+          artCategory: eventData.artCategory,
+          ticketKioskAddress: eventData.KioskAddress, // Note: property name is KioskAddress, not ticketKioskAddress
+          txHash
+        }
 
     } catch (error) {
       console.error('CONTRACT_CALL: Error during event creation process:', error)
