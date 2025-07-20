@@ -46,8 +46,12 @@ export default function EventRoom() {
 
   // State management
   const [eventId, setEventId] = useState<string | null>(null)
-  const [isCreator, setIsCreator] = useState(false)
   const [ticketId, setTicketId] = useState<string | null>(null)
+  
+  // Simple 3-boolean logic as requested
+  const [isCreator, setIsCreator] = useState(false)
+  const [isParticipant, setIsParticipant] = useState(false)
+  const [hasTicket, setHasTicket] = useState(false)
   const [eventData, setEventData] = useState<any>(null)
   const [isLoadingEvent, setIsLoadingEvent] = useState(true)
   const [streamStatus, setStreamStatus] = useState({
@@ -88,7 +92,7 @@ export default function EventRoom() {
     console.log('EVENT_ROOM: No valid event ID found in URL')
   }, [eventIdParam, isCreatorParam, ticketIdParam])
 
-  // Verify user access and determine role (creator vs participant)
+  // Simple 3-boolean verification: isCreator, isParticipant, hasTicket
   useEffect(() => {
     const verifyUserAccess = async () => {
       if (!eventId || !userProfile?.address || !walletClient || !isConnected) {
@@ -96,36 +100,34 @@ export default function EventRoom() {
       }
 
       try {
-        console.log('EVENT_ROOM: Verifying user access for event:', eventId)
-        console.log('EVENT_ROOM: User address:', userProfile.address)
-
         const ticketService = createTicketService(walletClient)
         
         // Check if user is the creator of this event
         const eventDetails = await ticketService.getEventDetails(Number(eventId))
-        const isEventCreator = eventDetails.creator.toLowerCase() === userProfile.address.toLowerCase()
+        const userIsCreator = eventDetails.creator.toLowerCase() === userProfile.address.toLowerCase()
         
-        console.log('EVENT_ROOM: Event creator:', eventDetails.creator)
-        console.log('EVENT_ROOM: User address:', userProfile.address)
-        console.log('EVENT_ROOM: Is creator:', isEventCreator)
-
-        if (isEventCreator) {
+        if (userIsCreator) {
+          // User is the creator
           setIsCreator(true)
-          console.log('EVENT_ROOM: User verified as event creator')
+          setIsParticipant(false)
+          setHasTicket(false) // Creator doesn't need ticket
+          setStreamStatus(prev => ({ ...prev, hasAccess: true }))
         } else {
-          // Check if user has a ticket for this event
-          const hasTicket = await ticketService.userHasTicket(Number(eventId), userProfile.address)
-          console.log('EVENT_ROOM: User has ticket:', hasTicket)
+          // User is a participant - check for ticket
+          setIsCreator(false)
+          setIsParticipant(true)
           
-          if (!hasTicket) {
-            console.log('EVENT_ROOM: User has no access to this event')
-            // Redirect to ticket purchase page
-            router.push(`/kiosk/${eventId}`)
-            return
+          const userHasTicket = await ticketService.userHasTicket(Number(eventId), userProfile.address)
+          setHasTicket(userHasTicket)
+          
+          if (userHasTicket) {
+            setStreamStatus(prev => ({ ...prev, hasAccess: true }))
+          } else {
+            // No ticket - show message and let user decide to buy ticket
+            setStreamStatus(prev => ({ ...prev, hasAccess: false }))
+            console.log('EVENT_ROOM: User does not have a ticket for this event')
           }
         }
-
-        setStreamStatus(prev => ({ ...prev, hasAccess: true }))
 
       } catch (error) {
         console.error('EVENT_ROOM: Error verifying user access:', error)

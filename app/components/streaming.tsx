@@ -121,25 +121,34 @@ export const Streaming: React.FC<StreamingProps> = ({
     }
   }, [streamStatus, viewerCount, hasAccess, onStreamStatusChange])
 
-  // Periodic status check for viewer count
+    // Optional: Minimal status check and viewer count updates
   useEffect(() => {
     if (streamStatus === 'live') {
       const interval = setInterval(async () => {
         try {
+          // Get viewer count for display
+          const currentViewerCount = await streamingService.getViewerCount(eventId)
+          setViewerCount(currentViewerCount)
+          
+          // Check WebRTC connection state
           const status = await streamingService.checkStreamStatus(eventId)
-          if (!status.isLive) {
+          
+          // Only update if connection is actually lost
+          if (!status.isLive && streamStatus === 'live') {
+            console.log('STREAMING_UI: WebRTC connection lost, updating status')
             setStreamStatus('offline')
+            if (!isCreator) {
+              setIsStreaming(false)
+            }
           }
-          // In a real implementation, viewer count would come from SRS API
-          setViewerCount(Math.floor(Math.random() * 100) + 1)
         } catch (error) {
-          console.warn('Error checking stream status:', error)
+          console.warn('STREAMING: Error checking connection status:', error)
         }
-      }, 10000)
+      }, 15000) // Check every 15 seconds for viewer count
 
       return () => clearInterval(interval)
     }
-  }, [streamStatus, eventId])
+  }, [streamStatus, eventId, isCreator])
 
   // Start streaming (Creator mode)
   const startStreaming = async () => {
@@ -168,13 +177,12 @@ export const Streaming: React.FC<StreamingProps> = ({
       setIsStreaming(true)
       setStreamStatus('live')
       
-      // Set video preview for creator
+      // Set video preview for creator (show their own stream)
       if (videoRef.current) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: isCameraOn,
-          audio: false // No audio feedback for creator preview
-        })
-        videoRef.current.srcObject = stream
+        const stream = streamingService.getCurrentStream()
+        if (stream) {
+          videoRef.current.srcObject = stream
+        }
       }
       
       toast.success('Stream started successfully!')
@@ -218,7 +226,7 @@ export const Streaming: React.FC<StreamingProps> = ({
     }
   }
 
-  // Start viewing (Viewer mode)
+  // Start viewing (Viewer mode) 
   const startViewing = async () => {
     if (isCreator || !videoRef.current) return
 
@@ -232,6 +240,7 @@ export const Streaming: React.FC<StreamingProps> = ({
       const session = await streamingService.startPlaying(eventId, videoRef.current)
       
       setStreamSession(session)
+      setIsStreaming(true)
       setStreamStatus('live')
       
       console.log('STREAMING: Viewing started:', session)
@@ -241,10 +250,13 @@ export const Streaming: React.FC<StreamingProps> = ({
       const errorMessage = error instanceof Error ? error.message : 'Failed to connect to stream'
       setStreamError(errorMessage)
       setStreamStatus('offline')
+      setIsStreaming(false)
     } finally {
       setIsConnecting(false)
     }
   }
+
+
 
   // Toggle camera
   const toggleCamera = () => {
@@ -484,7 +496,7 @@ export const Streaming: React.FC<StreamingProps> = ({
         )}
 
         {/* Viewer Controls */}
-        {!isCreator && !isStreaming && hasAccess && (
+        {!isCreator && hasAccess && !isStreaming && (
           <div className="flex justify-center">
             <Button 
               onClick={startViewing} 

@@ -23,6 +23,13 @@ class StreamingService {
   }
 
   /**
+   * Get current media stream (for creator preview)
+   */
+  getCurrentStream(): MediaStream | null {
+    return this.currentStream;
+  }
+
+  /**
    * Generate stream URLs directly (no backend needed)
    */
   generateStreamUrls(eventId: string): StreamSession {
@@ -75,155 +82,96 @@ class StreamingService {
     };
   }
 
-  /**
-   * Check stream status directly from SRS API
+    /**
+   * Get current WebRTC connection state
    */
-  async checkStreamStatus(eventId: string): Promise<{
-    isLive: boolean;
-    available: boolean;
-    isActive: boolean;
-    hasEnded: boolean;
-  }> {
-    try {
-      const srsApiUrl = 'https://room.haus25.live/srs-api/v1/streams/';
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+  getConnectionState(): {
+    isConnected: boolean;
+    isPublishing: boolean;
+    isViewing: boolean;
+    connectionState: string;
+  } {
+    const connectionState = this.peerConnection?.connectionState || 'closed';
+    const isConnected = connectionState === 'connected';
+    
+    return {
+      isConnected,
+      isPublishing: isConnected && !!this.currentStream,
+      isViewing: isConnected && !!this.videoElement,
+      connectionState
+    };
+  }
 
-      const response = await fetch(srsApiUrl, {
-        signal: controller.signal,
+  /**
+   * Get lightweight viewer count from SRS API
+   */
+  async getViewerCount(eventId: string): Promise<number> {
+    try {
+      const response = await fetch('https://room.haus25.live/srs-api/v1/streams', {
+        signal: AbortSignal.timeout(3000),
         headers: { 'Accept': 'application/json' }
       });
-      
-      clearTimeout(timeoutId);
       
       if (!response.ok) {
         throw new Error(`SRS API responded with status: ${response.status}`);
       }
 
       const srsData = await response.json();
+      const streams = srsData.streams || [];
       
-      const isLive = srsData.streams?.some((stream: any) => 
-        stream.app === 'live' && stream.stream === eventId
-      ) || false;
+      // Find stream matching our event ID
+      const matchingStream = streams.find((stream: any) => 
+        (stream.app === 'live') && 
+        (stream.stream === eventId || stream.name === eventId)
+      );
       
-      console.log('STREAMING: Direct SRS status check:', { eventId, isLive });
-      
-      return {
-        isLive,
-        available: true,
-        isActive: isLive,
-        hasEnded: false
-      };
-
+      return matchingStream?.clients || 0;
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.warn('STREAMING: SRS status check timed out');
-      } else {
-        console.warn('STREAMING: Error checking SRS status:', error);
-      }
-      
-      return {
-        isLive: false,
-        available: true,
-        isActive: false,
-        hasEnded: false
-      };
+      console.warn('STREAMING: Error getting viewer count:', error);
+      return 0;
     }
   }
 
   /**
-   * Check if an event is currently valid to stream based on blockchain timing
+   * Simple status check - primarily uses WebRTC connection state
    */
-  async checkEventTiming(eventId: string): Promise<{
-    canStream: boolean;
-    status: 'upcoming' | 'live' | 'ended';
-    timeUntilStart?: number;
-    timeUntilEnd?: number;
-    startDate: Date;
-    endDate: Date;
-  }> {
-    try {
-      // Get event data from blockchain (this is your scheduling system!)
-      const { createEventFactoryService } = await import('./create');
-      const eventService = createEventFactoryService();
-      const eventDetails = await eventService.getEventDetails(parseInt(eventId));
-      
-      const now = new Date();
-      const startDate = new Date(eventDetails.startDate * 1000); // Convert from Unix
-      const endDate = new Date(startDate.getTime() + eventDetails.eventDuration * 60 * 1000);
-      
-      let status: 'upcoming' | 'live' | 'ended';
-      let canStream = false;
-      
-      if (now < startDate) {
-        status = 'upcoming';
-        canStream = false; // Event hasn't started yet
-      } else if (now <= endDate) {
-        status = 'live';
-        canStream = true; // Event is currently live
-      } else {
-        status = 'ended';
-        canStream = false; // Event has ended
-      }
-      
-      return {
-        canStream,
-        status,
-        timeUntilStart: status === 'upcoming' ? startDate.getTime() - now.getTime() : undefined,
-        timeUntilEnd: status === 'live' ? endDate.getTime() - now.getTime() : undefined,
-        startDate,
-        endDate
-      };
-      
-    } catch (error) {
-      console.error('STREAMING: Error checking event timing:', error);
-      // Fallback: allow streaming (fail open)
-      return {
-        canStream: true,
-        status: 'live',
-        startDate: new Date(),
-        endDate: new Date(Date.now() + 60 * 60 * 1000) // 1 hour from now
-      };
-    }
-  }
-
-  /**
-   * Get stream URLs with timing validation
-   */
-  async getStreamUrlsWithTiming(eventId: string): Promise<{
-    streamUrls: StreamSession;
-    eventRoomUrl: string;
-    timing: {
-      canStream: boolean;
-      status: 'upcoming' | 'live' | 'ended';
-      timeUntilStart?: number;
-      timeUntilEnd?: number;
-      startDate: Date;
-      endDate: Date;
-    };
+  async checkStreamStatus(eventId: string): Promise<{
     isLive: boolean;
     available: boolean;
+    isActive: boolean;
+    hasEnded: boolean;
+    viewerCount?: number;
+    publisherConnected?: boolean;
   }> {
-    console.log('STREAMING: Getting stream URLs with blockchain timing validation');
+    // Primary source of truth: WebRTC connection state
+    const connectionState = this.getConnectionState();
     
-    const [streamUrls, timing, liveStatus] = await Promise.all([
-      Promise.resolve(this.generateStreamUrls(eventId)),
-      this.checkEventTiming(eventId),
-      this.checkStreamStatus(eventId)
-    ]);
+    // For publishers, they are live if they're connected and publishing
+    // For viewers, stream is live if they're successfully viewing
+    const isLive = connectionState.isPublishing || connectionState.isViewing;
+    
+    console.log('STREAMING: Status based on WebRTC state:', {
+      eventId,
+      isLive,
+      connectionState: connectionState.connectionState,
+      isPublishing: connectionState.isPublishing,
+      isViewing: connectionState.isViewing
+    });
     
     return {
-      streamUrls,
-      eventRoomUrl: this.generateEventRoomUrl(eventId),
-      timing,
-      isLive: liveStatus.isLive,
-      available: timing.canStream || timing.status === 'upcoming' // Available if can stream or upcoming
+      isLive,
+      available: true,
+      isActive: isLive,
+      hasEnded: false,
+      viewerCount: 0, // Use separate getViewerCount method
+      publisherConnected: connectionState.isPublishing
     };
   }
 
+
+
   /**
-   * Get stream information directly
+   * Get stream information directly (simplified)
    */
   async getStreamInfo(eventId: string): Promise<{
     streamUrls: StreamSession;
@@ -231,7 +179,7 @@ class StreamingService {
     isLive: boolean;
     available: boolean;
   }> {
-    console.log('STREAMING: Getting stream info directly for event', eventId);
+    console.log('STREAMING: Getting stream info for event', eventId);
     
     const streamUrls = this.generateStreamUrls(eventId);
     const status = await this.checkStreamStatus(eventId);
@@ -281,6 +229,16 @@ class StreamingService {
         bundlePolicy: 'max-bundle'
       });
 
+      // Monitor connection state changes
+      this.peerConnection.onconnectionstatechange = () => {
+        const state = this.peerConnection?.connectionState;
+        console.log('STREAMING: WebRTC connection state changed to:', state);
+        
+        if (state === 'failed' || state === 'disconnected') {
+          console.warn('STREAMING: Connection lost, attempting to reconnect...');
+        }
+      };
+
       // Add stream tracks to peer connection
       this.currentStream.getTracks().forEach(track => {
         if (this.peerConnection && this.currentStream) {
@@ -322,6 +280,16 @@ class StreamingService {
         ],
         bundlePolicy: 'max-bundle'
       });
+
+      // Monitor connection state changes
+      this.peerConnection.onconnectionstatechange = () => {
+        const state = this.peerConnection?.connectionState;
+        console.log('STREAMING: WebRTC connection state changed to:', state);
+        
+        if (state === 'failed' || state === 'disconnected') {
+          console.warn('STREAMING: Viewer connection lost');
+        }
+      };
 
       // Handle incoming stream
       this.peerConnection.ontrack = (event) => {
@@ -405,25 +373,7 @@ class StreamingService {
     }
   }
 
-  /**
-   * Get current stream status
-   */
-  getStreamStatus(): {
-    isPublishing: boolean;
-    isPlaying: boolean;
-    hasVideo: boolean;
-    hasAudio: boolean;
-  } {
-    const hasStream = !!this.currentStream;
-    const hasConnection = !!this.peerConnection;
 
-    return {
-      isPublishing: hasStream && hasConnection,
-      isPlaying: hasConnection && !!this.videoElement,
-      hasVideo: hasStream && this.currentStream ? this.currentStream.getVideoTracks().length > 0 : false,
-      hasAudio: hasStream && this.currentStream ? this.currentStream.getAudioTracks().length > 0 : false
-    };
-  }
 
   /**
    * Send offer to SRS server via WHIP/WHEP (private method)
