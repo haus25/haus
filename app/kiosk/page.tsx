@@ -32,7 +32,6 @@ type SortOption = "date-earliest" | "date-latest" | "price-low-high" | "price-hi
 export default function TicketKiosk() {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState("")
-  const [expandedCardId, setExpandedCardId] = useState<number | null>(null)
   const [isCurationModalOpen, setIsCurationModalOpen] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState<any>(null)
   const [selectedCategories, setSelectedCategories] = useState<Category[]>([])
@@ -137,13 +136,8 @@ export default function TicketKiosk() {
     }
   }
 
-  const toggleCardExpansion = (eventId: string) => {
-    const numericId = parseInt(eventId)
-    if (expandedCardId === numericId) {
-      setExpandedCardId(null)
-    } else {
-      setExpandedCardId(numericId)
-    }
+  const handleViewDetails = (event: any) => {
+    router.push(`/kiosk/${event.contractEventId}`)
   }
 
   const openCurationModal = (event: any) => {
@@ -425,8 +419,8 @@ export default function TicketKiosk() {
                         </div>
                       </CardContent>
                       <CardFooter className="p-4 pt-0 flex justify-between">
-                        <Button variant="outline" size="sm" onClick={() => toggleCardExpansion(event.id)}>
-                          {expandedCardId === parseInt(event.id) ? "Hide Details" : "Details"}
+                        <Button variant="outline" size="sm" onClick={() => handleViewDetails(event)}>
+                          Details
                         </Button>
                         <Button 
                           size="sm" 
@@ -438,42 +432,7 @@ export default function TicketKiosk() {
                         </Button>
                       </CardFooter>
 
-                      {/* Expanded Card Content */}
-                      {expandedCardId === parseInt(event.id) && (
-                        <div className="p-4 pt-0 border-t">
-                          <div className="mb-4">
-                            <h4 className="font-medium mb-2">Event Description</h4>
-                            <p className="text-sm text-muted-foreground">{event.description}</p>
-                          </div>
 
-                          <div className="space-y-4">
-                            <div>
-                              <h4 className="font-medium mb-2">Contract Details</h4>
-                              <div className="text-xs text-muted-foreground space-y-1">
-                                <p>Event ID: {event.contractEventId}</p>
-                                <p>Creator: {event.creatorAddress.slice(0, 8)}...{event.creatorAddress.slice(-6)}</p>
-                                {event.ticketKioskAddress && (
-                                  <p>Ticket Kiosk: {event.ticketKioskAddress.slice(0, 8)}...{event.ticketKioskAddress.slice(-6)}</p>
-                                )}
-                                <p>Reserve Price: {event.reservePrice} SEI</p>
-                                <p>Status: {event.finalized ? 'Finalized' : 'Active'}</p>
-                              </div>
-                            </div>
-
-                            <div className="space-y-4">
-                              <h4 className="font-medium">Curation</h4>
-                              <p className="text-sm text-muted-foreground mb-4">
-                                Propose to curate this event by offering your expertise to improve visibility, promotion, or
-                                visuals.
-                              </p>
-
-                              <Button className="w-full" variant="outline" onClick={() => openCurationModal(event)}>
-                                Propose to Curate
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </Card>
                   ))}
                 </div>
