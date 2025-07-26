@@ -21,7 +21,7 @@ import {
   Crown
 } from 'lucide-react'
 import { streamingService, type StreamSession } from '../services/streaming'
-import { createTicketVerificationService } from '../services/tickets'
+import { createTicketService } from '../services/tickets'
 import { useWalletClient } from 'wagmi'
 import { useAuth } from '../contexts/auth'
 import { toast } from 'sonner'
@@ -85,17 +85,13 @@ export const Streaming: React.FC<StreamingProps> = ({
       }
 
       try {
-        const ticketService = createTicketVerificationService(walletClient)
-        const verification = await ticketService.verifyEventAccess(
-          ticketKioskAddress,
-          userProfile.address,
-          parseInt(eventId)
-        )
+        const ticketService = createTicketService(walletClient)
+        const userHasTicket = await ticketService.userHasTicket(parseInt(eventId), userProfile.address)
 
-        setHasAccess(verification.hasAccess)
+        setHasAccess(userHasTicket)
         
-        if (!verification.hasAccess) {
-          setStreamError(verification.reason || 'Access denied')
+        if (!userHasTicket) {
+          setStreamError('You need a valid ticket to access this stream')
         }
 
       } catch (error) {
@@ -186,6 +182,7 @@ export const Streaming: React.FC<StreamingProps> = ({
       }
       
       toast.success('Stream started successfully!')
+      
       console.log('STREAMING: Stream started:', session)
 
     } catch (error) {

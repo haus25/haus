@@ -1,17 +1,20 @@
 "use client"
 
 import type React from "react"
-
 import { useRef, useEffect } from "react"
 import { Avatar, AvatarFallback } from "./ui/avatar"
 import { Input } from "./ui/input"
 import { Button } from "./ui/button"
+import { MessageSquare, X, Send } from "lucide-react"
 
 interface ChatMessage {
   id: number
   user: string
   message: string
   timestamp: string
+  isSystem?: boolean
+  isTip?: boolean
+  tipAmount?: number
 }
 
 interface EventChatProps {
@@ -21,6 +24,9 @@ interface EventChatProps {
   onSendMessage: (e: React.FormEvent) => void
   height?: string
   isOverlay?: boolean
+  isVisible?: boolean
+  onToggleVisibility?: () => void
+  className?: string
 }
 
 export function EventChat({
@@ -30,6 +36,9 @@ export function EventChat({
   onSendMessage,
   height = "400px",
   isOverlay = false,
+  isVisible = true,
+  onToggleVisibility,
+  className = "",
 }: EventChatProps) {
   const chatContainerRef = useRef<HTMLDivElement>(null)
 
@@ -40,43 +49,90 @@ export function EventChat({
     }
   }, [messages])
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (message.trim()) {
+      onSendMessage(e)
+    }
+  }
+
+  const formatTimestamp = (timestamp: string) => {
+    const date = new Date(timestamp)
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+
   if (isOverlay) {
     return (
-      <div className="h-full flex flex-col">
-        <div className="p-2 border-b border-white/20">
-          <h3 className="text-white text-sm font-medium">Live Chat</h3>
-        </div>
-        <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-2 space-y-2">
+      <div className={`
+        h-full w-full flex flex-col
+        ${className}
+      `}>
+        {/* Chat Messages */}
+        <div 
+          ref={chatContainerRef} 
+          className="flex-1 overflow-y-auto p-3 space-y-3"
+          style={{ height: 'calc(100% - 60px)' }}
+        >
           {messages.map((msg) => (
-            <div key={msg.id} className="flex items-start space-x-2">
-              <Avatar className="h-6 w-6">
-                <AvatarFallback className="text-xs">{msg.user.slice(0, 2).toUpperCase()}</AvatarFallback>
-              </Avatar>
-              <div>
-                <div className="flex items-center space-x-1">
-                  <span className="text-white text-xs font-medium">{msg.user}</span>
-                  <span className="text-white/60 text-xs">
-                    {new Date(msg.timestamp).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </div>
-                <p className="text-white text-xs">{msg.message}</p>
+            <div key={msg.id} className="flex gap-2">
+              {!msg.isSystem && (
+                <Avatar className="w-6 h-6 mt-1">
+                  <AvatarFallback className="text-xs bg-white/20 text-white">
+                    {msg.user.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+              )}
+              <div className="flex-1 min-w-0">
+                {msg.isSystem ? (
+                  <div className="text-center">
+                    <span className="text-xs text-primary bg-primary/20 px-2 py-1 rounded">
+                      {msg.message}
+                    </span>
+                  </div>
+                ) : msg.isTip ? (
+                  <div className="bg-primary/20 border border-primary/30 rounded-lg p-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-primary font-medium text-sm">{msg.user}</span>
+                      <span className="text-xs text-white/70">
+                        {formatTimestamp(msg.timestamp)}
+                      </span>
+                    </div>
+                    <p className="text-primary text-sm mt-1">
+                      💰 Tipped {msg.tipAmount} SEI
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-white font-medium text-sm">{msg.user}</span>
+                      <span className="text-xs text-white/50">
+                        {formatTimestamp(msg.timestamp)}
+                      </span>
+                    </div>
+                    <p className="text-white/90 text-sm mt-1 break-words">{msg.message}</p>
+                  </div>
+                )}
               </div>
             </div>
           ))}
         </div>
-        <div className="p-2 border-t border-white/20">
-          <form onSubmit={onSendMessage} className="flex space-x-1">
+
+        {/* Chat Input */}
+        <div className="p-3 border-t border-white/20">
+          <form onSubmit={handleSubmit} className="flex gap-2">
             <Input
-              placeholder="Type a message..."
               value={message}
               onChange={(e) => onMessageChange(e.target.value)}
-              className="flex-1 h-8 bg-white/10 border-white/20 text-white text-xs"
+              placeholder="Type a message..."
+              className="flex-1 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:border-primary"
             />
-            <Button type="submit" size="sm" className="h-8 px-2 py-0 bg-primary text-white">
-              Send
+            <Button
+              type="submit"
+              size="icon"
+              disabled={!message.trim()}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 border-primary"
+            >
+              <Send size={16} />
             </Button>
           </form>
         </div>
@@ -84,39 +140,71 @@ export function EventChat({
     )
   }
 
+  // Regular embedded chat (for tabs or right sidebar)
   return (
-    <div className="flex flex-col h-full">
-      <div ref={chatContainerRef} className={`h-[${height}] overflow-y-auto p-4 space-y-4`}>
+    <div className={`h-full flex flex-col ${className}`} style={{ height }}>
+      {/* Chat Messages */}
+      <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-3 space-y-3">
         {messages.map((msg) => (
-          <div key={msg.id} className="flex items-start space-x-2">
-            <Avatar className="h-8 w-8">
-              <AvatarFallback>{msg.user.slice(0, 2).toUpperCase()}</AvatarFallback>
-            </Avatar>
-            <div>
-              <div className="flex items-center space-x-2">
-                <span className="font-medium">{msg.user}</span>
-                <span className="text-xs text-muted-foreground">
-                  {new Date(msg.timestamp).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-              </div>
-              <p className="text-sm">{msg.message}</p>
+          <div key={msg.id} className="flex gap-2">
+            {!msg.isSystem && (
+              <Avatar className="w-6 h-6 mt-1">
+                <AvatarFallback className="text-xs bg-accent text-accent-foreground">
+                  {msg.user.charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+            )}
+            <div className="flex-1 min-w-0">
+              {msg.isSystem ? (
+                <div className="text-center">
+                  <span className="text-xs text-primary bg-primary/10 px-2 py-1 rounded border border-primary/20">
+                    {msg.message}
+                  </span>
+                </div>
+              ) : msg.isTip ? (
+                <div className="bg-primary/10 border border-primary/20 rounded-lg p-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-primary font-medium text-sm">{msg.user}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatTimestamp(msg.timestamp)}
+                    </span>
+                  </div>
+                  <p className="text-primary text-sm mt-1">
+                    💰 Tipped {msg.tipAmount} SEI
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm text-card-foreground">{msg.user}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatTimestamp(msg.timestamp)}
+                    </span>
+                  </div>
+                  <p className="text-sm mt-1 break-words text-card-foreground">{msg.message}</p>
+                </div>
+              )}
             </div>
           </div>
         ))}
       </div>
-      <div className="p-4 border-t">
-        <form onSubmit={onSendMessage} className="flex space-x-2">
+
+      {/* Chat Input */}
+      <div className="p-3 border-t border-border">
+        <form onSubmit={handleSubmit} className="flex gap-2">
           <Input
-            placeholder="Type a message..."
             value={message}
             onChange={(e) => onMessageChange(e.target.value)}
-            className="flex-1"
+            placeholder="Type a message..."
+            className="flex-1 bg-background border-border text-foreground focus:border-primary"
           />
-          <Button type="submit" className="bg-primary text-white">
-            Send
+          <Button
+            type="submit"
+            size="icon"
+            disabled={!message.trim()}
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            <Send size={16} />
           </Button>
         </form>
       </div>

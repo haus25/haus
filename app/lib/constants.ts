@@ -81,7 +81,7 @@ export const IPFS_GATEWAY = process.env.NEXT_PUBLIC_IPFS_GATEWAY || "https://ipf
 export const HIDDEN_MESSAGE_1 = "cmVhbGl0eSAtIGlzIHlldCB0byBiZSBpbnZlbnRlZC4=" // "reality - is yet to be invented." in base64
 export const HIDDEN_MESSAGE_2 = "anVzdCBhbm90aGVyIHF1b3RlLg==" // "just another quote." in base64
 
-// EventFactory ABI - matches deployed contract
+// EventFactory ABI - latest
 export const EVENT_FACTORY_ABI = [
   {
     "type": "function",
@@ -115,6 +115,7 @@ export const EVENT_FACTORY_ABI = [
   }
 ] as const
 
+// TicketKiosk ABI - latest
 export const TICKET_KIOSK_ABI = [
   {
     "type": "function",
@@ -148,20 +149,64 @@ export const TICKET_KIOSK_ABI = [
   }
 ] as const
 
+// LiveTipping ABI - latest (shorter version for easy detection)
 export const LIVE_TIPPING_ABI = [
+  // === Core Tipping Functions ===
   {
-    inputs: [
-      {
-        internalType: "uint256",
-        name: "_eventId",
-        type: "uint256",
-      },
+    "type": "function",
+    "name": "sendTip",
+    "inputs": [
+      {"name": "eventId", "type": "uint256", "internalType": "uint256"},
+      {"name": "message", "type": "string", "internalType": "string"}
     ],
-    name: "tipCreator",
-    outputs: [],
-    stateMutability: "payable",
-    type: "function",
+    "outputs": [],
+    "stateMutability": "payable"
   },
+
+  {
+    "type": "function",
+    "name": "isEventTippable",
+    "inputs": [{"name": "eventId", "type": "uint256", "internalType": "uint256"}],
+    "outputs": [{"name": "", "type": "bool", "internalType": "bool"}],
+    "stateMutability": "view"
+  },
+  // === Data Retrieval Functions ===
+  {
+    "type": "function",
+    "name": "getEventTippingData",
+    "inputs": [{"name": "eventId", "type": "uint256", "internalType": "uint256"}],
+    "outputs": [
+      {"name": "creator", "type": "address", "internalType": "address"},
+      {"name": "startDate", "type": "uint256", "internalType": "uint256"},
+      {"name": "endDate", "type": "uint256", "internalType": "uint256"},
+      {"name": "reservePrice", "type": "uint256", "internalType": "uint256"},
+      {"name": "totalTips", "type": "uint256", "internalType": "uint256"},
+      {"name": "highestTipper", "type": "address", "internalType": "address"},
+      {"name": "highestTip", "type": "uint256", "internalType": "uint256"},
+      {"name": "active", "type": "bool", "internalType": "bool"},
+      {"name": "finalized", "type": "bool", "internalType": "bool"}
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getEventTips",
+    "inputs": [{"name": "eventId", "type": "uint256", "internalType": "uint256"}],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "internalType": "struct LiveTipping.TipData[]",
+        "components": [
+          {"name": "tipper", "type": "address", "internalType": "address"},
+          {"name": "amount", "type": "uint256", "internalType": "uint256"},
+          {"name": "timestamp", "type": "uint256", "internalType": "uint256"},
+          {"name": "message", "type": "string", "internalType": "string"}
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  }
 ] as const
 
 // Function to get a random video URL based on category

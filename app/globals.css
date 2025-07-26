@@ -13,24 +13,31 @@
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 10%;
 
-    --primary: 0 80% 50%;
+    /* Brand Color Palette - Primary (Red) */
+    --primary: 0 83% 59%; /* #FF3B30 */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 0 0% 96%;
+    /* Brand Color Palette - Secondary (Gray) */
+    --secondary: 0 0% 96%; /* #F5F5F5 */
     --secondary-foreground: 0 0% 10%;
 
     --muted: 0 0% 96%;
     --muted-foreground: 0 0% 45%;
 
+    /* Brand Color Palette - Accent */
     --accent: 0 0% 96%;
     --accent-foreground: 0 0% 10%;
+
+    /* Brand Color Palette - Contrast (Black) */
+    --contrast: 0 0% 0%; /* #000000 */
+    --contrast-foreground: 0 0% 100%;
 
     --destructive: 0 100% 50%;
     --destructive-foreground: 0 0% 100%;
 
     --border: 0 0% 90%;
     --input: 0 0% 90%;
-    --ring: 0 80% 50%;
+    --ring: 0 83% 59%; /* Primary color ring */
 
     --radius: 0.5rem;
 
@@ -49,24 +56,31 @@
     --popover: 0 0% 15%;
     --popover-foreground: 0 0% 98%;
 
-    --primary: 0 80% 50%;
+    /* Brand Color Palette - Primary (Red) - unchanged for dark */
+    --primary: 0 83% 59%; /* #FF3B30 */
     --primary-foreground: 0 0% 100%;
 
+    /* Brand Color Palette - Secondary (adjusted for dark) */
     --secondary: 0 0% 15%;
     --secondary-foreground: 0 0% 98%;
 
     --muted: 0 0% 15%;
     --muted-foreground: 0 0% 65%;
 
+    /* Brand Color Palette - Accent (adjusted for dark) */
     --accent: 0 0% 15%;
     --accent-foreground: 0 0% 98%;
+
+    /* Brand Color Palette - Contrast (White in dark mode) */
+    --contrast: 0 0% 100%; /* #FFFFFF */
+    --contrast-foreground: 0 0% 0%;
 
     --destructive: 0 100% 50%;
     --destructive-foreground: 0 0% 100%;
 
     --border: 0 0% 20%;
     --input: 0 0% 20%;
-    --ring: 0 80% 50%;
+    --ring: 0 83% 59%; /* Primary color ring */
   }
 }
 

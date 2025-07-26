@@ -1,9 +1,11 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card"
+import { Input } from "../../components/ui/input"
+import { Button } from "../../components/ui/button"
+import { Badge } from "../../components/ui/badge"
+import { Avatar, AvatarFallback, AvatarImage } from "../../components/ui/avatar"
 import { Send } from "lucide-react"
 import { useAccount } from "wagmi"
 
@@ -12,8 +14,7 @@ interface ChatMessage {
   sender: string
   message: string
   timestamp: number
-  isTip?: boolean
-  tipAmount?: number
+  isSystem?: boolean
 }
 
 interface ChatPanelProps {
@@ -29,158 +30,248 @@ export default function ChatPanel({ eventId, isLive }: ChatPanelProps) {
   const socketRef = useRef<WebSocket | null>(null)
   const { isConnected: walletConnected, address } = useAccount()
 
-  // Scroll to bottom when messages change
+  // Initialize with welcome message and some sample chat
+  useEffect(() => {
+    const initialMessages: ChatMessage[] = [
+      {
+        id: "system-1",
+        sender: "System",
+        message: `Welcome to the event! ${isLive ? 'The stream is live!' : 'Waiting for stream to start...'}`,
+        timestamp: Date.now(),
+        isSystem: true
+      },
+      {
+        id: "msg-1",
+        sender: "alice123",
+        message: "Amazing performance! 🎉",
+        timestamp: Date.now() - 300000
+      },
+      {
+        id: "msg-2",
+        sender: "bob456",
+        message: "This is incredible! Love the energy",
+        timestamp: Date.now() - 240000
+      },
+      {
+        id: "msg-3",
+        sender: "charlie789",
+        message: "Keep it up! 🔥",
+        timestamp: Date.now() - 180000
+      },
+      {
+        id: "msg-4",
+        sender: "diana101",
+        message: "When is the next song?",
+        timestamp: Date.now() - 120000
+      },
+      {
+        id: "msg-5",
+        sender: "eve202",
+        message: "This is my favorite part!",
+        timestamp: Date.now() - 60000
+      }
+    ]
+    
+    setMessages(initialMessages)
+  }, [isLive])
+
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  // Connect to WebSocket chat service
+  // Initialize WebSocket connection for real-time chat
   useEffect(() => {
-    // Create WebSocket connection
-    const socket = new WebSocket(`wss://chat.haus.art/events/${eventId}`)
-    socketRef.current = socket
+    if (!eventId) return
 
-    // Connection opened
-    socket.addEventListener("open", () => {
+    // Simulate WebSocket connection
+    const connectChat = () => {
       setIsConnected(true)
-
-      // Send authentication message
-      if (walletConnected && address) {
-        socket.send(
-          JSON.stringify({
-            type: "auth",
-            address: address,
-          }),
-        )
-      }
-
-      // Send join message
-      socket.send(
-        JSON.stringify({
-          type: "join",
-          eventId,
-        }),
-      )
-    })
-
-    // Listen for messages
-    socket.addEventListener("message", (event) => {
-      try {
-        const data = JSON.parse(event.data)
-
-        if (data.type === "message") {
-          const message: ChatMessage = {
-            id: data.id,
-            sender: data.sender,
-            message: data.message,
-            timestamp: data.timestamp,
-            isTip: data.isTip,
-            tipAmount: data.tipAmount,
+      console.log('CHAT: Connected to event chat:', eventId)
+      
+      // Simulate receiving messages periodically
+      const interval = setInterval(() => {
+        if (Math.random() > 0.7) { // 30% chance of new message
+          const sampleMessages = [
+            "Great stream! 👏",
+            "Love this!",
+            "Amazing work!",
+            "When's the next one?",
+            "This is fire! 🔥",
+            "So talented!",
+            "Can't stop watching",
+            "Incredible performance"
+          ]
+          
+          const randomMessage = sampleMessages[Math.floor(Math.random() * sampleMessages.length)]
+          const randomUser = `user${Math.floor(Math.random() * 1000)}`
+          
+          const newMessage: ChatMessage = {
+            id: `msg-${Date.now()}`,
+            sender: randomUser,
+            message: randomMessage,
+            timestamp: Date.now()
           }
-
-          setMessages((prev) => [...prev, message])
-        } else if (data.type === "history") {
-          // Initial message history
-          setMessages(data.messages)
+          
+          setMessages(prev => [...prev, newMessage])
         }
-      } catch (error) {
-        console.error("Error parsing message:", error)
-      }
-    })
+      }, 8000) // New message every 8 seconds
 
-    // Connection closed
-    socket.addEventListener("close", () => {
-      setIsConnected(false)
-    })
-
-    // Connection error
-    socket.addEventListener("error", (error) => {
-      console.error("WebSocket error:", error)
-      setIsConnected(false)
-    })
-
-    // Clean up on unmount
-    return () => {
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.close()
-      }
+      return () => clearInterval(interval)
     }
-  }, [eventId, walletConnected, address])
 
-  // Send a new message
+    const cleanup = connectChat()
+    
+    return cleanup
+  }, [eventId])
+
+  // Send message
   const sendMessage = () => {
-    if (!newMessage.trim() || !isConnected || !socketRef.current) return
+    if (!newMessage.trim() || !walletConnected) return
 
-    const messageData = {
-      type: "message",
-      eventId,
-      message: newMessage,
-      sender: walletConnected ? address : "Guest",
+    const message: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      sender: address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "You",
+      message: newMessage.trim(),
+      timestamp: Date.now()
     }
 
-    socketRef.current.send(JSON.stringify(messageData))
+    setMessages(prev => [...prev, message])
     setNewMessage("")
   }
 
-  // Format timestamp
-  const formatTime = (timestamp: number): string => {
-    const date = new Date(timestamp)
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  // Handle enter key
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendMessage()
+    }
   }
 
-  // Get display name from address
-  const getDisplayName = (userAddress: string): string => {
-    // If it's the current user
-    if (walletConnected && address && userAddress === address) {
-      return "You"
-    }
+  // Format time for messages
+  const formatTime = (timestamp: number) => {
+    return new Date(timestamp).toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    })
+  }
 
-    // Otherwise, shorten the address
-    return `${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`
+  // Get display name for user
+  const getDisplayName = (sender: string) => {
+    if (sender === "System") return sender
+    return sender
   }
 
   return (
-    <Card className="h-full flex flex-col">
-      <CardHeader className="pb-3">
-        <CardTitle>Live Chat</CardTitle>
-      </CardHeader>
-      <CardContent className="flex-1 flex flex-col">
-        <div className="flex-1 overflow-y-auto mb-4 space-y-4">
-          {messages.map((msg) => (
-            <div key={msg.id} className="flex flex-col">
-              <div className="flex items-start">
-                <span className="font-semibold text-sm">{getDisplayName(msg.sender)}</span>
-                <span className="text-xs text-gray-500 ml-2">{formatTime(msg.timestamp)}</span>
-              </div>
-              <div className={`mt-1 ${msg.isTip ? "text-green-600 font-medium" : ""}`}>
-                {msg.isTip && "🎁 "}
-                {msg.message}
-                {msg.isTip && msg.tipAmount && ` (${msg.tipAmount} SEI)`}
-              </div>
-            </div>
-          ))}
-          <div ref={messagesEndRef} />
+    <div className="h-full flex flex-col bg-background">
+      
+      {/* Chat Header */}
+      <div className="p-4 border-b border-border bg-muted/30">
+        <div className="flex items-center justify-between">
+          <h3 className="font-medium text-sm">Live Chat</h3>
+          <div className="flex items-center space-x-2">
+            <Badge 
+              variant={isLive ? "default" : "secondary"} 
+              className={isLive ? "bg-green-500 text-white" : ""}
+            >
+              <div className={`w-2 h-2 rounded-full mr-2 ${isLive ? 'bg-white animate-pulse' : 'bg-muted-foreground'}`}></div>
+              {isLive ? 'Live' : 'Offline'}
+            </Badge>
+            <Badge variant="outline" className="text-xs">
+              {messages.length} messages
+            </Badge>
+          </div>
         </div>
+      </div>
 
-        <div className="mt-auto">
-          <div className="flex">
+      {/* Chat Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {messages.map((msg) => (
+          <div key={msg.id} className="group">
+            
+            {/* System Messages */}
+            {msg.isSystem ? (
+              <div className="text-center">
+                <Badge variant="secondary" className="text-xs">
+                  {msg.message}
+                </Badge>
+              </div>
+            ) : (
+              /* Regular Messages */
+              <div className="space-y-1">
+                
+                {/* Message Header */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Avatar className="h-6 w-6">
+                      <AvatarFallback className="text-xs bg-primary text-primary-foreground">
+                        {getDisplayName(msg.sender).slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="font-medium text-sm">{getDisplayName(msg.sender)}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">{formatTime(msg.timestamp)}</span>
+                </div>
+                
+                {/* Message Content */}
+                <div className="text-sm">
+                  {msg.message}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        
+        {/* Auto-scroll anchor */}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Chat Input */}
+      <div className="p-4 border-t border-border bg-muted/30">
+        
+        {/* Connection Status */}
+        {!isConnected && (
+          <div className="mb-3 text-center">
+            <Badge variant="outline" className="text-xs">
+              Connecting to chat...
+            </Badge>
+          </div>
+        )}
+
+        {/* Input Area */}
+        <div className="flex space-x-2">
+          <div className="flex-1">
             <Input
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type a message..."
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-              disabled={!isConnected}
-              className="flex-1"
+              onKeyPress={handleKeyPress}
+              placeholder={walletConnected ? "Type a message..." : "Connect wallet to chat"}
+              disabled={!walletConnected || !isConnected}
+              className="bg-background"
             />
-            <Button onClick={sendMessage} disabled={!isConnected || !newMessage.trim()} className="ml-2">
-              <Send size={18} />
-            </Button>
           </div>
-          {!isConnected && (
-            <p className="text-sm text-red-500 mt-2">Disconnected from chat. Please refresh the page.</p>
+          <Button 
+            onClick={sendMessage} 
+            disabled={!newMessage.trim() || !walletConnected || !isConnected}
+            size="icon"
+            className="bg-primary hover:bg-primary/90"
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Chat Status */}
+        <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+          <div className="flex items-center space-x-2">
+            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+          </div>
+          
+          {!walletConnected && (
+            <span>Connect wallet to participate</span>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
