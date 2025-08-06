@@ -1,13 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Navbar } from "../components/navbar"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
+import { Checkbox } from "../components/ui/checkbox"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card"
 import { ArtCategoryIcon } from "../components/categoryIcons"
-import { Search, Calendar, Clock, Users, Ticket, ChevronDown, Loader2 } from "lucide-react"
+import { Search, Calendar, Clock, Users, Ticket, ChevronDown, Loader2, Check } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../components/ui/dropdownMenu"
 import { Breadcrumbs } from "../components/breadcrumbs"
 import { RecentlyViewed } from "../components/recentlyViewed"
@@ -37,10 +38,60 @@ export default function TicketKiosk() {
   const [selectedCategories, setSelectedCategories] = useState<Category[]>([])
   const [priceRange, setPriceRange] = useState({ min: 0, max: 50 })
   const [sortOption, setSortOption] = useState<SortOption>("date-earliest")
+  const [showPastEvents, setShowPastEvents] = useState(false)
+  const [purchasingTickets, setPurchasingTickets] = useState<Set<number>>(new Set())
+  const [userOwnedTickets, setUserOwnedTickets] = useState<Set<number>>(new Set())
 
   const { events, loading, refreshEvents } = useEvents()
   const { userProfile, isConnected } = useAuth()
   const { data: walletClient } = useWalletClient()
+
+  // Clear purchasing states when wallet disconnects
+  useEffect(() => {
+    if (!isConnected || !walletClient) {
+      setPurchasingTickets(new Set())
+      setUserOwnedTickets(new Set())
+    }
+  }, [isConnected, walletClient])
+
+  // Check user's ticket ownership when events or user profile changes
+  useEffect(() => {
+    const checkUserTickets = async () => {
+      if (!isConnected || !userProfile?.address || !walletClient || events.length === 0) {
+        setUserOwnedTickets(new Set())
+        return
+      }
+
+      try {
+        console.log('OWNERSHIP_CHECK: Starting ticket ownership check for', events.length, 'events')
+        const ticketService = createTicketPurchaseService(walletClient)
+        const ownedTicketEventIds = new Set<number>()
+
+        // Check each event to see if user owns a ticket
+        for (const event of events) {
+          try {
+            const hasTicket = await ticketService.userHasTicket(event.contractEventId, userProfile.address)
+            if (hasTicket) {
+              ownedTicketEventIds.add(event.contractEventId)
+              console.log('OWNERSHIP_CHECK: User owns ticket for event', event.contractEventId)
+            }
+          } catch (error) {
+            // Skip events that can't be checked
+            console.warn(`Could not check ticket ownership for event ${event.contractEventId}:`, error)
+          }
+        }
+
+        console.log('OWNERSHIP_CHECK: Found', ownedTicketEventIds.size, 'owned tickets')
+        setUserOwnedTickets(ownedTicketEventIds)
+      } catch (error) {
+        console.error('Error checking user ticket ownership:', error)
+      }
+    }
+
+    // Add a small delay to avoid conflicts with ongoing transactions
+    const timeoutId = setTimeout(checkUserTickets, 500)
+    return () => clearTimeout(timeoutId)
+  }, [events, isConnected, userProfile?.address, walletClient])
 
   const handleBuyTicket = async (event: any) => {
     if (!isConnected || !userProfile) {
@@ -49,7 +100,7 @@ export default function TicketKiosk() {
     }
 
     if (!walletClient) {
-      toast.error("Wallet not available")
+      toast.error("Wallet not available. Please try reconnecting your wallet.")
       return
     }
 
@@ -59,19 +110,30 @@ export default function TicketKiosk() {
       return
     }
 
+    const eventId = event.contractEventId
+
+    // Check if user already owns this ticket (prevent double purchase)
+    if (userOwnedTickets.has(eventId)) {
+      toast.error("You already have a ticket for this event!")
+      return
+    }
+
+    // Set loading state for this specific ticket
+    setPurchasingTickets(prev => new Set(prev).add(eventId))
+
     try {
       console.log("TICKET_PURCHASE: Starting ticket purchase flow")
-      console.log("TICKET_PURCHASE: Event ID:", event.contractEventId)
+      console.log("TICKET_PURCHASE: Event ID:", eventId)
       console.log("TICKET_PURCHASE: Event title:", event.title)
       console.log("TICKET_PURCHASE: User address:", userProfile.address)
+      console.log("TICKET_PURCHASE: Wallet client available:", !!walletClient)
 
       toast.loading("Initializing ticket purchase...")
 
       // Create ticket purchase service
+      console.log("TICKET_PURCHASE: Creating ticket service...")
       const ticketService = createTicketPurchaseService(walletClient)
-
-      // Use the contractEventId from the real contract
-      const eventId = event.contractEventId
+      console.log("TICKET_PURCHASE: Ticket service created successfully")
       
       console.log("TICKET_PURCHASE: Using contract event ID:", eventId)
 
@@ -106,18 +168,32 @@ export default function TicketKiosk() {
       console.log("TICKET_PURCHASE: Ticket name:", purchaseResult.ticketName)
       console.log("TICKET_PURCHASE: Transaction hash:", purchaseResult.txHash)
 
+      // Clear any existing toasts
+      toast.dismiss()
+
+      // Show success message with action button
       toast.success(
-        `Ticket purchased successfully! 
-        Ticket: ${purchaseResult.ticketName}
-        Price: ${purchaseResult.purchasePrice} SEI
-        Tx: ${purchaseResult.txHash.slice(0, 8)}...`
+        `🎫 Ticket purchased successfully!\n\nTicket: ${purchaseResult.ticketName}\nPrice: ${purchaseResult.purchasePrice} SEI\nTx: ${purchaseResult.txHash.slice(0, 8)}...`,
+        {
+          duration: 8000,
+          action: {
+            label: "View Tickets",
+            onClick: () => router.push("/profile?tab=tickets")
+          }
+        }
       )
 
-      // Refresh events to update participant counts
-      await refreshEvents()
+      // Immediately update the owned tickets state to reflect the purchase
+      setUserOwnedTickets(prev => new Set(prev).add(eventId))
+
+      // Refresh events after a delay to allow toast to display properly
+      setTimeout(() => {
+        refreshEvents().catch(console.error)
+      }, 1000)
 
     } catch (error: any) {
       console.error("TICKET_PURCHASE: Error during ticket purchase:", error)
+      toast.dismiss()  // Clear loading toasts
       
       // Parse common error messages
       let errorMessage = error.message || "Failed to purchase ticket"
@@ -133,6 +209,13 @@ export default function TicketKiosk() {
       }
 
       toast.error(errorMessage)
+    } finally {
+      // Clear loading state for this specific ticket
+      setPurchasingTickets(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(eventId)
+        return newSet
+      })
     }
   }
 
@@ -166,7 +249,10 @@ export default function TicketKiosk() {
       // Filter by price range
       const matchesPrice = event.ticketPrice >= priceRange.min && event.ticketPrice <= priceRange.max
 
-      return matchesSearch && matchesCategory && matchesPrice
+      // Filter by event status (show only upcoming events by default)
+      const matchesStatus = showPastEvents || event.status === 'upcoming'
+
+      return matchesSearch && matchesCategory && matchesPrice && matchesStatus
     })
     .sort((a, b) => {
       // Sort based on selected option
@@ -245,6 +331,20 @@ export default function TicketKiosk() {
               </div>
             )}
             
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="show-past-events"
+                checked={showPastEvents}
+                onCheckedChange={(checked) => setShowPastEvents(checked === true)}
+              />
+              <label
+                htmlFor="show-past-events"
+                className="text-sm font-medium cursor-pointer"
+              >
+                Show past events
+              </label>
+            </div>
+
             <Button 
               variant="outline" 
               size="sm" 
@@ -418,18 +518,47 @@ export default function TicketKiosk() {
                           <span>{event.ticketPrice} SEI</span>
                         </div>
                       </CardContent>
-                      <CardFooter className="p-4 pt-0 flex justify-between">
-                        <Button variant="outline" size="sm" onClick={() => handleViewDetails(event)}>
+                      <CardFooter className="p-4 pt-0 flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handleViewDetails(event)} className="flex-1">
                           Details
                         </Button>
-                        <Button 
-                          size="sm" 
-                          className="bg-primary text-primary-foreground hover:bg-primary/90" 
-                          onClick={() => handleBuyTicket(event)}
-                          disabled={event.status === 'completed' || event.participants >= event.maxParticipants}
-                        >
-                          {event.participants >= event.maxParticipants ? 'Sold Out' : 'Buy Ticket'}
-                        </Button>
+                        {isConnected && userProfile && event.creatorAddress.toLowerCase() === userProfile.address.toLowerCase() && event.status === 'upcoming' ? (
+                          <Button 
+                            size="sm" 
+                            className="bg-primary text-primary-foreground hover:bg-primary/90 flex-1" 
+                            onClick={() => router.push(`/kiosk/${event.contractEventId}`)}
+                          >
+                            Curate
+                          </Button>
+                        ) : (
+                          <Button 
+                            size="sm" 
+                            className={`flex-1 ${
+                              userOwnedTickets.has(event.contractEventId) 
+                                ? "bg-green-600 text-white hover:bg-green-700" 
+                                : "bg-primary text-primary-foreground hover:bg-primary/90"
+                            }`}
+                            onClick={() => handleBuyTicket(event)}
+                            disabled={
+                              event.status === 'completed' || 
+                              event.participants >= event.maxParticipants || 
+                              purchasingTickets.has(event.contractEventId) ||
+                              userOwnedTickets.has(event.contractEventId)
+                            }
+                          >
+                            {purchasingTickets.has(event.contractEventId) ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                Purchasing...
+                              </>
+                            ) : userOwnedTickets.has(event.contractEventId) ? (
+                              <>
+                                <Check className="h-4 w-4 mr-2" />
+                                Bought!
+                              </>
+                            ) : event.participants >= event.maxParticipants ? 'Sold Out' : 'Buy Ticket'}
+                          </Button>
+                        )}
                       </CardFooter>
 
 

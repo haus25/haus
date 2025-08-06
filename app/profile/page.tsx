@@ -374,7 +374,16 @@ export default function ProfilePage() {
                         >
                           Event Room
                         </Button>
-                        {event.status !== 'completed' && (
+                        {event.status === 'upcoming' ? (
+                          <Button 
+                            size="sm" 
+                            variant="secondary"
+                            onClick={() => router.push(`/kiosk/${event.contractEventId}`)}
+                            className="flex-1"
+                          >
+                            Curate
+                          </Button>
+                        ) : event.status !== 'completed' && (
                           <Button 
                             size="sm" 
                             onClick={() => handleStartLivestream(event)}

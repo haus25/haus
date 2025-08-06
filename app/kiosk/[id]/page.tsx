@@ -19,7 +19,12 @@ import {
   Share2,
   Ticket,
   ArrowLeft,
-  Loader2
+  Loader2,
+  Palette,
+  Megaphone,
+  PlayCircle,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react"
 import { toast } from "sonner"
 import { fetchOnChainEvents, type OnChainEventData, createTicketPurchaseService } from "../../services/tickets"
@@ -39,6 +44,9 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const [event, setEvent] = useState<OnChainEventData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isFavorited, setIsFavorited] = useState(false)
+  const [isCurationExpanded, setIsCurationExpanded] = useState(false)
+  const [selectedCuration, setSelectedCuration] = useState<'planner' | 'promoter' | 'producer' | null>(null)
+  const [isPurchasing, setIsPurchasing] = useState(false)
 
   useEffect(() => {
     const loadEventData = async () => {
@@ -74,16 +82,21 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     }
 
     if (!walletClient) {
-      toast.error("Wallet not available")
+      toast.error("Wallet not available. Please try reconnecting your wallet.")
       return
     }
 
+    setIsPurchasing(true)
+
     try {
       console.log("TICKET_PURCHASE: Starting ticket purchase flow for event", event.contractEventId)
+      console.log("TICKET_PURCHASE: Wallet client available:", !!walletClient)
       toast.loading("Initializing ticket purchase...")
 
       // Create ticket purchase service
+      console.log("TICKET_PURCHASE: Creating ticket service...")
       const ticketService = createTicketPurchaseService(walletClient)
+      console.log("TICKET_PURCHASE: Ticket service created successfully")
 
       // Check if user already has a ticket
       const alreadyHasTicket = await ticketService.userHasTicket(event.contractEventId, userProfile.address)
@@ -106,19 +119,26 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       // Execute the purchase
       const purchaseResult = await ticketService.purchaseTicket(event.contractEventId, userProfile.address)
 
+      // Clear any existing toasts
+      toast.dismiss()
+
+      // Show success message with action button
       toast.success(
-        `Ticket purchased successfully! 
-        Ticket: ${purchaseResult.ticketName}
-        Price: ${purchaseResult.purchasePrice} SEI`
+        `🎫 Ticket purchased successfully!\n\nTicket: ${purchaseResult.ticketName}\nPrice: ${purchaseResult.purchasePrice} SEI\nTx: ${purchaseResult.txHash.slice(0, 8)}...`,
+        {
+          duration: 8000,
+          action: {
+            label: "View Tickets",
+            onClick: () => router.push("/profile?tab=tickets")
+          }
+        }
       )
 
-      // Redirect to profile to see the ticket
-      setTimeout(() => {
-        router.push('/profile?tab=tickets')
-      }, 2000)
+
 
     } catch (error: any) {
       console.error("TICKET_PURCHASE: Error during ticket purchase:", error)
+      toast.dismiss()  // Clear loading toasts
       
       let errorMessage = error.message || "Failed to purchase ticket"
       
@@ -133,6 +153,8 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       }
 
       toast.error(errorMessage)
+    } finally {
+      setIsPurchasing(false)
     }
   }
 
@@ -145,6 +167,20 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     navigator.clipboard.writeText(window.location.href)
     toast.success("Event link copied to clipboard")
   }
+
+  const handleCurationSelect = (type: 'planner' | 'promoter' | 'producer') => {
+    setSelectedCuration(type)
+  }
+
+  const isCreator = isConnected && userProfile && event && event.creatorAddress.toLowerCase() === userProfile.address.toLowerCase()
+  const canShowCuration = isCreator && event?.status === 'upcoming'
+
+  // Clear purchasing state when wallet disconnects
+  useEffect(() => {
+    if (!isConnected || !walletClient) {
+      setIsPurchasing(false)
+    }
+  }, [isConnected, walletClient])
 
   if (isLoading) {
     return (
@@ -263,7 +299,140 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
               </CardContent>
             </Card>
 
-            {/* Creator Info */}
+            {/* Curation Section - Only visible to creator for upcoming events */}
+            {canShowCuration && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Event Curation</CardTitle>
+                  <CardDescription>
+                    Enhance your event with professional curation services
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {!isCurationExpanded ? (
+                    <Button 
+                      onClick={() => setIsCurationExpanded(true)}
+                      className="w-full animate-pulse"
+                      size="lg"
+                    >
+                      <Palette className="h-4 w-4 mr-2" />
+                      Curate This Event
+                    </Button>
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold">Select Curation Package</h3>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => setIsCurationExpanded(false)}
+                        >
+                          <ChevronUp className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Planner Card */}
+                        <Card 
+                          className={`cursor-pointer transition-all border-2 ${
+                            selectedCuration === 'planner' 
+                              ? 'border-primary bg-primary/5 shadow-md' 
+                              : 'border-border hover:border-primary/50'
+                          }`}
+                          onClick={() => handleCurationSelect('planner')}
+                        >
+                          <CardHeader className="text-center pb-2">
+                            <div className="mx-auto mb-2 p-3 rounded-full bg-blue-100 w-fit">
+                              <Calendar className="h-6 w-6 text-blue-600" />
+                            </div>
+                            <CardTitle className="text-lg">Planner</CardTitle>
+                            <div className="text-2xl font-bold text-primary">3%</div>
+                          </CardHeader>
+                          <CardContent className="text-center space-y-2">
+                            <ul className="text-sm space-y-1 text-muted-foreground">
+                              <li>• Propose description</li>
+                              <li>• Propose schedule</li>
+                              <li>• Propose new Reserve Price</li>
+                              <li>• Create Banner</li>
+                            </ul>
+                          </CardContent>
+                        </Card>
+
+                        {/* Promoter Card */}
+                        <Card 
+                          className={`cursor-pointer transition-all border-2 ${
+                            selectedCuration === 'promoter' 
+                              ? 'border-primary bg-primary/5 shadow-md' 
+                              : 'border-border hover:border-primary/50'
+                          }`}
+                          onClick={() => handleCurationSelect('promoter')}
+                        >
+                          <CardHeader className="text-center pb-2">
+                            <div className="mx-auto mb-2 p-3 rounded-full bg-green-100 w-fit">
+                              <Megaphone className="h-6 w-6 text-green-600" />
+                            </div>
+                            <CardTitle className="text-lg">Promoter</CardTitle>
+                            <div className="text-2xl font-bold text-primary">3%</div>
+                          </CardHeader>
+                          <CardContent className="text-center space-y-2">
+                            <ul className="text-sm space-y-1 text-muted-foreground">
+                              <li>• Event Plan (campaign)</li>
+                              <li>• Social promotion: X</li>
+                              <li>• +1 Social (IG, TikTok, Farcaster)</li>
+                              <li>• +1 Event: max 3</li>
+                            </ul>
+                          </CardContent>
+                        </Card>
+
+                        {/* Producer Card */}
+                        <Card 
+                          className={`cursor-pointer transition-all border-2 ${
+                            selectedCuration === 'producer' 
+                              ? 'border-primary bg-primary/5 shadow-md' 
+                              : 'border-border hover:border-primary/50'
+                          }`}
+                          onClick={() => handleCurationSelect('producer')}
+                        >
+                          <CardHeader className="text-center pb-2">
+                            <div className="mx-auto mb-2 p-3 rounded-full bg-purple-100 w-fit">
+                              <PlayCircle className="h-6 w-6 text-purple-600" />
+                            </div>
+                            <CardTitle className="text-lg">Producer</CardTitle>
+                            <div className="text-2xl font-bold text-primary">4%</div>
+                          </CardHeader>
+                          <CardContent className="text-center space-y-2">
+                            <ul className="text-sm space-y-1 text-muted-foreground">
+                              <li>• No compression storage</li>
+                              <li>• AI Video Enhancement</li>
+                              <li>• Event Highlights + Booklet</li>
+                            </ul>
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      {selectedCuration && (
+                        <div className="pt-4 border-t">
+                          <div className="text-center space-y-2">
+                            <p className="text-sm text-muted-foreground">
+                              You selected <span className="font-semibold capitalize">{selectedCuration}</span> curation
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {selectedCuration === 'producer' ? '4%' : '3%'} of your event revenues will be shared with the curator
+                            </p>
+                            <Button className="mt-4">
+                              Request {selectedCuration.charAt(0).toUpperCase() + selectedCuration.slice(1)} Curation
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* Creator Info */}
             <Card>
               <CardHeader>
                 <CardTitle>Event Creator</CardTitle>
@@ -288,7 +457,6 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                 </div>
               </CardContent>
             </Card>
-          </div>
 
           {/* Sidebar */}
           <div className="space-y-6">
@@ -323,10 +491,19 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                   className="w-full" 
                   size="lg"
                   onClick={handlePurchaseTicket}
-                  disabled={event.participants >= event.maxParticipants || event.status === 'completed'}
+                  disabled={event.participants >= event.maxParticipants || event.status === 'completed' || isPurchasing}
                 >
-                  <Ticket className="h-4 w-4 mr-2" />
-                  {event.participants >= event.maxParticipants ? 'Sold Out' : 'Purchase Ticket'}
+                  {isPurchasing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Purchasing...
+                    </>
+                  ) : (
+                    <>
+                      <Ticket className="h-4 w-4 mr-2" />
+                      {event.participants >= event.maxParticipants ? 'Sold Out' : 'Purchase Ticket'}
+                    </>
+                  )}
                 </Button>
 
                 <p className="text-xs text-muted-foreground text-center">
