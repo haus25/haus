@@ -9,8 +9,9 @@ import { Tabs, TabsList, TabsTrigger } from "./ui/tabs"
 import { ArtCategoryIcon } from "./categoryIcons"
 import { getRandomEventByCategory } from "../data/mock-events"
 import { Play, Pause, Volume2, VolumeX, Tv, RefreshCw, Film, ArrowRight } from "lucide-react"
+import { useAuth } from "../contexts/auth"
 
-// Replace the RELIABLE_VIDEOS object with these new URLs from Vercel Blob storage
+// Mock videos from Vercel Blob storage
 const RELIABLE_VIDEOS = {
   "standup-comedy":
     "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/mixkit-youtuber-vlogging-in-his-studio-41272-hd-ready-0rsj4lJ7mNHJy2Rv7BAlcJI31a8l9X.mp4",
@@ -47,6 +48,7 @@ const CATEGORY_DESTINATIONS = {
 
 // Memoize the component to prevent unnecessary re-renders
 export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redirectPath?: string) => void }) {
+  const { isConnected, connect } = useAuth()
   const [selectedCategory, setSelectedCategory] = useState<Category>("standup-comedy")
   const [currentEvent, setCurrentEvent] = useState(getRandomEventByCategory(selectedCategory))
   const [isPlaying, setIsPlaying] = useState(false) // Start with false to avoid auto-play issues
@@ -91,7 +93,12 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
       setTimeRemaining((prev) => {
         if (prev <= 1) {
           // When time is up, show prompt and clear timer
-          setShowPrompt(true)
+          if (!isConnected) {
+            setShowPrompt(true)
+          } else {
+            setShowPrompt(false)
+            setIsPlaying(false)
+          }
           if (timerRef.current) {
             clearInterval(timerRef.current)
           }
@@ -376,16 +383,16 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
 
   // Handle video click to connect and redirect
   const handleVideoClick = () => {
-    // Always trigger the connect action when video is clicked, regardless of showPrompt state
-    const destinationPath = CATEGORY_DESTINATIONS[selectedCategory]
-    onConnect(destinationPath)
+    // Only trigger auth when not connected
+    if (!isConnected) {
+      connect()
+    }
   }
 
   // Handle connect button click
   const handleConnectClick = (e: React.MouseEvent) => {
     e.stopPropagation() // Prevent event from bubbling up
-    const destinationPath = CATEGORY_DESTINATIONS[selectedCategory]
-    onConnect(destinationPath)
+    connect()
   }
 
   // Set up mounted ref for cleanup
@@ -475,7 +482,7 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
         )}
 
         {/* Wallet connection prompt */}
-        {showPrompt && (
+        {showPrompt && !isConnected && (
           <div
             className="absolute inset-0 bg-black/90 flex flex-col items-center justify-center p-4 sm:p-6 text-center z-20 cursor-pointer"
             onClick={handleVideoClick}
@@ -499,7 +506,7 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
         )}
 
         {/* Video controls */}
-        {!videoFailed && !showPrompt && (
+        {!videoFailed && !(showPrompt && !isConnected) && (
           <div className="absolute bottom-0 left-0 right-0 p-2 sm:p-4 bg-gradient-to-t from-black/80 to-transparent flex justify-between items-center z-10">
             <div className="flex items-center gap-1 sm:gap-2">
               <Button
@@ -542,16 +549,16 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
         )}
 
         {/* Event info */}
-        {!videoFailed && !showPrompt && (
+        {!videoFailed && !(showPrompt && !isConnected) && (
           <div className="absolute top-0 left-0 right-0 p-2 sm:p-4 bg-gradient-to-b from-black/80 to-transparent z-10">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-white font-medium text-sm sm:text-base truncate max-w-[200px] sm:max-w-none bauhaus-text">
-                  {currentEvent.title.toUpperCase()}
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <h3 className="text-white font-medium text-sm sm:text-base break-words whitespace-normal leading-snug bauhaus-text">
+                  {currentEvent.title}
                 </h3>
                 <p className="text-gray-300 text-xs sm:text-sm">by {currentEvent.creator}</p>
               </div>
-              <ArtCategoryIcon category={selectedCategory} size="sm" className="text-primary bg-white/10 p-1 rounded" />
+              <ArtCategoryIcon category={selectedCategory} size="sm" className="text-primary bg-white/10 p-1 rounded shrink-0" />
             </div>
           </div>
         )}

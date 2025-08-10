@@ -305,7 +305,7 @@ export default function Home() {
             <div className="flex flex-col items-center text-center space-y-8">
               <ParallaxWrapper speed={0.4}>
                 <p className="md:text-lg max-w-[700px] font-bold brutal-text">
-                  join us on stage, and become part of a community that values creativity and message.
+                  join us on stage, and become part of a community that values what you have to say, exactly as you want to say it.
                 </p>
               </ParallaxWrapper>
               
