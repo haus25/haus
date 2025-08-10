@@ -24,12 +24,22 @@ import {
   Megaphone,
   PlayCircle,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  MessageSquare,
+  Edit
 } from "lucide-react"
 import { toast } from "sonner"
 import { fetchOnChainEvents, type OnChainEventData, createTicketPurchaseService } from "../../services/tickets"
 import { useAuth } from "../../contexts/auth"
 import { useWalletClient } from 'wagmi'
+import { 
+  deployCurationContract, 
+  getCurationScopes, 
+  requestCurationPlan, 
+  sendCurationMessage,
+  hasCurationDeployed,
+  type CurationResult
+} from "../../services/curation"
 
 interface EventDetailPageProps {
   params: {
@@ -47,6 +57,10 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const [isCurationExpanded, setIsCurationExpanded] = useState(false)
   const [selectedCuration, setSelectedCuration] = useState<'planner' | 'promoter' | 'producer' | null>(null)
   const [isPurchasing, setIsPurchasing] = useState(false)
+  const [curationConversationId, setCurationConversationId] = useState<string | null>(null)
+  const [curationDeployed, setCurationDeployed] = useState(false)
+  const [isDeployingCuration, setIsDeployingCuration] = useState(false)
+  const [curationPlan, setCurationPlan] = useState<CurationResult | null>(null)
 
   useEffect(() => {
     const loadEventData = async () => {
@@ -60,6 +74,11 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         if (targetEvent) {
           setEvent(targetEvent)
           console.log('TICKET_DETAIL: Event found:', targetEvent.title)
+          
+          // Check if curation is already deployed
+          const hasCuration = await hasCurationDeployed(params.id)
+          setCurationDeployed(hasCuration)
+          
         } else {
           console.error('TICKET_DETAIL: Event not found for ID:', params.id)
           toast.error('Event not found')
@@ -172,6 +191,84 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     setSelectedCuration(type)
   }
 
+  const handleDeployCuration = async () => {
+    if (!isConnected || !userProfile || !event || !selectedCuration || !walletClient) {
+      toast.error("Please connect your wallet and select a curation scope")
+      return
+    }
+
+    setIsDeployingCuration(true)
+    
+    try {
+      const scopeMap = { 'planner': 1, 'promoter': 2, 'producer': 3 }
+      const scope = scopeMap[selectedCuration]
+      
+      toast.loading("Deploying curation contract...")
+      
+      const result = await deployCurationContract(
+        params.id,
+        scope,
+        `${selectedCuration} curation for ${event.title}`
+      )
+      
+      toast.dismiss()
+      toast.success(`🎨 Curation contract deployed successfully!\n\nTx: ${result.txHash.slice(0, 8)}...`)
+      
+      setCurationDeployed(true)
+      setIsCurationExpanded(false)
+      
+    } catch (error: any) {
+      console.error("CURATION_DEPLOY: Error:", error)
+      toast.dismiss()
+      toast.error(`Failed to deploy curation: ${error.message || 'Unknown error'}`)
+    } finally {
+      setIsDeployingCuration(false)
+    }
+  }
+
+  const handleRequestPlan = async () => {
+    if (!isConnected || !userProfile || !event) {
+      toast.error("Please connect your wallet")
+      return
+    }
+
+    try {
+      toast.loading("Requesting curation plan...")
+      
+      const planResult = await requestCurationPlan(
+        params.id,
+        userProfile.address,
+        {
+          eventId: params.id,
+          title: event.title,
+          category: event.category,
+          description: event.description,
+          duration: event.duration,
+          currentSchedule: {
+            date: new Date(event.date).getTime(),
+            time: new Date(event.date).toLocaleTimeString()
+          },
+          currentPricing: {
+            ticketPrice: event.ticketPrice,
+            reservePrice: event.reservePrice
+          }
+        }
+      )
+      
+      // Store the complete plan result for display
+      setCurationPlan(planResult)
+      setCurationConversationId(planResult.eventId) // Use eventId as identifier
+      
+      toast.dismiss()
+      toast.success("🎨 Curation plan generated successfully!")
+      
+    } catch (error: any) {
+      console.error("CURATION_REQUEST: Error:", error)
+      toast.dismiss()
+      toast.error(`Failed to request plan: ${error.message || 'Unknown error'}`)
+    }
+  }
+
   const isCreator = isConnected && userProfile && event && event.creatorAddress.toLowerCase() === userProfile.address.toLowerCase()
   const canShowCuration = isCreator && event?.status === 'upcoming'
 
@@ -235,25 +332,65 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             {/* Event Header */}
             <Card>
               <CardContent className="p-0">
-                <div className="aspect-video rounded-t-lg overflow-hidden">
+                <div className="aspect-video rounded-t-lg overflow-hidden relative group">
                   <img
-                    src={event.image}
-                    alt={event.title}
+                    src={curationPlan?.curation?.banner?.imageUrl || event.image}
+                    alt={curationPlan?.curation?.banner?.alt || event.title}
                     className="w-full h-full object-cover"
                   />
+                  {curationPlan && (
+                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button 
+                        size="sm" 
+                        variant="secondary" 
+                        className="h-8 w-8 p-0"
+                        onClick={() => {/* TODO: Open banner edit dialog */}}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
-                      <h1 className="text-3xl font-bold mb-2">{event.title}</h1>
+                      <div className="flex items-center gap-2 mb-2">
+                        <h1 className="text-3xl font-bold">
+                          {event.title}
+                        </h1>
+                        {curationPlan && (
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700"
+                            onClick={() => {/* TODO: Open title edit dialog */}}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                       <div className="flex items-center space-x-4 text-muted-foreground">
-                        <div className="flex items-center">
+                        <div className="flex items-center gap-1">
                           <Calendar className="h-4 w-4 mr-1" />
-                          {new Date(event.date).toLocaleDateString()}
+                          {curationPlan?.curation?.schedule?.recommendedDate 
+                            ? new Date(curationPlan.curation.schedule.recommendedDate).toLocaleDateString()
+                            : new Date(event.date).toLocaleDateString()}
+                          {curationPlan && (
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              className="h-4 w-4 p-0 text-blue-600 hover:text-blue-700 ml-1"
+                              onClick={() => {/* TODO: Open schedule edit dialog */}}
+                            >
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                          )}
                         </div>
-                        <div className="flex items-center">
+                        <div className="flex items-center gap-1">
                           <Clock className="h-4 w-4 mr-1" />
-                          {new Date(event.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                          {curationPlan?.curation?.schedule?.recommendedTime 
+                            ? curationPlan.curation.schedule.recommendedTime
+                            : new Date(event.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                         </div>
                         <div className="flex items-center">
                           <Users className="h-4 w-4 mr-1" />
@@ -262,6 +399,16 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                       </div>
                     </div>
                     <div className="flex space-x-2">
+                      {/* Accept Plan Button - Only show when curation plan exists */}
+                      {curationPlan && (
+                        <Button
+                          size="sm"
+                          className="bg-green-600 hover:bg-green-700 text-white"
+                          onClick={() => {/* TODO: Accept curation plan */}}
+                        >
+                          ✓ Accept Plan
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"
@@ -290,9 +437,21 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                   </div>
 
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold">About This Event</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-semibold">About This Event</h3>
+                      {curationPlan && (
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700"
+                          onClick={() => {/* TODO: Open description edit dialog */}}
+                        >
+                          <Edit className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
                     <p className="text-muted-foreground leading-relaxed">
-                      {event.description}
+                      {curationPlan?.curation?.description?.description || event.description}
                     </p>
                   </div>
                 </div>
@@ -300,7 +459,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             </Card>
 
             {/* Curation Section - Only visible to creator for upcoming events */}
-            {canShowCuration && (
+            {canShowCuration && !curationDeployed && (
               <Card>
                 <CardHeader>
                   <CardTitle>Event Curation</CardTitle>
@@ -419,8 +578,19 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                             <p className="text-xs text-muted-foreground">
                               {selectedCuration === 'producer' ? '4%' : '3%'} of your event revenues will be shared with the curator
                             </p>
-                            <Button className="mt-4">
-                              Request {selectedCuration.charAt(0).toUpperCase() + selectedCuration.slice(1)} Curation
+                            <Button 
+                              className="mt-4" 
+                              onClick={handleDeployCuration}
+                              disabled={isDeployingCuration}
+                            >
+                              {isDeployingCuration ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                  Deploying...
+                                </>
+                              ) : (
+                                `Deploy ${selectedCuration.charAt(0).toUpperCase() + selectedCuration.slice(1)} Curation`
+                              )}
                             </Button>
                           </div>
                         </div>
@@ -430,6 +600,30 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                 </CardContent>
               </Card>
             )}
+
+            {/* Request Plan Section - Visible after curation is deployed */}
+            {canShowCuration && curationDeployed && !curationConversationId && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Event Curation Active</CardTitle>
+                  <CardDescription>
+                    Your curation contract has been deployed. Ready to analyze and optimize your event.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button 
+                    onClick={handleRequestPlan}
+                    className="w-full animate-pulse bg-red-600 hover:bg-red-700"
+                    size="lg"
+                  >
+                    <Palette className="h-4 w-4 mr-2" />
+                    Request Plan
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
+
           </div>
 
           {/* Creator Info */}
@@ -470,7 +664,23 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="text-center">
-                  <div className="text-3xl font-bold">{event.ticketPrice} SEI</div>
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="text-3xl font-bold">
+                      {curationPlan?.curation?.pricing?.ticketPrice 
+                        ? (parseInt(curationPlan.curation.pricing.ticketPrice) / 1e18).toFixed(3)
+                        : event.ticketPrice} SEI
+                    </div>
+                    {curationPlan && (
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700"
+                        onClick={() => {/* TODO: Open pricing edit dialog */}}
+                      >
+                        <Edit className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
                   <p className="text-sm text-muted-foreground">per ticket</p>
                 </div>
 
@@ -530,7 +740,13 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                     <DollarSign className="h-4 w-4 mr-2 text-muted-foreground" />
                     <span className="text-sm">Price</span>
                   </div>
-                  <span className="font-medium">{event.ticketPrice} SEI</span>
+                  <div className="flex items-center gap-1">
+                    <span className="font-medium">
+                      {curationPlan?.curation?.pricing?.ticketPrice 
+                        ? (parseInt(curationPlan.curation.pricing.ticketPrice) / 1e18).toFixed(3)
+                        : event.ticketPrice} SEI
+                    </span>
+                  </div>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center">

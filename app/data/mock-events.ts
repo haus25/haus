@@ -192,12 +192,12 @@ export const mockEvents = [
     videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-man-playing-a-guitar-on-stage-1719-large.mp4",
   },
 
-  // Live Painting
+  // Live Streaming 
   {
     id: 13,
     title: "Abstract Live Painting",
     creator: "artist.eth",
-    category: "live-painting",
+    category: "live-streaming",
     date: "2025-04-18T20:00:00",
     duration: 120,
     participants: 28,
@@ -212,7 +212,7 @@ export const mockEvents = [
     id: 14,
     title: "Digital Art Creation: From Blank Canvas to NFT",
     creator: "digitalartist.eth",
-    category: "live-painting",
+    category: "live-streaming",
     date: "2025-05-05T19:00:00",
     duration: 90,
     participants: 35,
@@ -227,7 +227,7 @@ export const mockEvents = [
     id: 15,
     title: "Collaborative Mural Creation",
     creator: "muralcollective.eth",
-    category: "live-painting",
+    category: "live-streaming",
     date: "2025-05-20T16:00:00",
     duration: 180,
     participants: 15,

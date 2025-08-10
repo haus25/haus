@@ -5,19 +5,19 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "../../lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 live-element",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
-        destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline:
-          "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
-        secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+        default: "btn-underground",
+        destructive: "bg-red-500 text-white border-2 border-red-700 transform skew-x-1 hover:skew-x-0 hover:scale-105 box-shadow-brutal",
+        outline: "border-2 border-current bg-transparent hover:bg-current hover:text-background transform -skew-y-1 hover:skew-y-0",
+        secondary: "bg-bauhaus-concrete text-bauhaus-white border-2 border-bauhaus-white transform skew-y-1 hover:skew-y-0",
+        ghost: "hover:bg-bauhaus-concrete hover:text-bauhaus-white transform rotate-1 hover:rotate-0",
+        link: "text-bauhaus-red underline-offset-4 hover:underline graffiti-underline",
+        minimal: "bg-transparent text-foreground hover:bg-bauhaus-concrete/20 transform -rotate-0.5 hover:rotate-0",
+        underground: "btn-underground",
+        electric: "bg-bauhaus-electric text-bauhaus-black border-2 border-bauhaus-black electric-accent",
       },
       size: {
         default: "h-10 px-4 py-2",

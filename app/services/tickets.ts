@@ -217,7 +217,7 @@ export class TicketService {
     try {
       const eventData = await this.getPublicClient().readContract({
         address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
-        abi: EventFactoryABI,
+        abi: EventFactoryABI.abi,
         functionName: 'getEvent',
         args: [BigInt(eventId)]
       })
@@ -228,7 +228,7 @@ export class TicketService {
         eventDuration: Number(eventData.eventDuration),
         reservePrice: formatEther(eventData.reservePrice),
         metadataURI: eventData.metadataURI,
-        ticketKioskAddress: eventData.ticketKioskAddress || eventData.KioskAddress,
+        ticketKioskAddress: eventData.KioskAddress, // Use KioskAddress from ABI
         finalized: eventData.finalized
       }
     } catch (error) {
@@ -310,7 +310,7 @@ export class TicketService {
       
       const totalEvents = await publicClient.readContract({
         address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
-        abi: EventFactoryABI,
+        abi: EventFactoryABI.abi,
         functionName: 'totalEvents',
       }) as bigint
 
@@ -324,13 +324,13 @@ export class TicketService {
         try {
           const eventData = await publicClient.readContract({
             address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
-            abi: EventFactoryABI,
+            abi: EventFactoryABI.abi,
             functionName: 'getEvent',
             args: [BigInt(i)],
           }) as any
 
-          // Get ticket kiosk data
-          const kioskData = await this.getTicketKioskData(eventData.ticketKioskAddress || eventData.KioskAddress)
+          // Get ticket kiosk data  
+          const kioskData = await this.getTicketKioskData(eventData.KioskAddress)
           
           // Parse metadata
           let metadata: any = {}
@@ -389,7 +389,7 @@ export class TicketService {
             image: convertIPFSUrl(metadata.image || '/placeholder.svg'),
             status,
             finalized: eventData.finalized,
-            ticketKioskAddress: eventData.ticketKioskAddress || eventData.KioskAddress,
+            ticketKioskAddress: eventData.KioskAddress,
             eventMetadataURI: eventData.metadataURI
           }
 
@@ -729,7 +729,7 @@ export class TicketService {
       
       const kioskData = await this.getPublicClient().readContract({
         address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
-        abi: EventFactoryABI,
+        abi: EventFactoryABI.abi,
         functionName: 'getAllTicketKiosks',
       }) as [bigint[], string[]]
 

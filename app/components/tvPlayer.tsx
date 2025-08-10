@@ -18,7 +18,7 @@ const RELIABLE_VIDEOS = {
     "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/1817-360-4J7GucopM3hE57hZjSwWqko3n5ULym.mp4",
   "poetry-slam": "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/2955-360-xLAcPRAAEvhA4gJV8bHULqhHaftej1.mp4",
   "open-mic": "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/29983-360-yI0kgZpZ7Bj7QUbZQGPxKmmKefwLav.mp4",
-  "live-painting": "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/443-360-kRKFI1NVe7SieGyQKFPiKQin2dY8LV.mp4",
+  "live-streaming": "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/443-360-kRKFI1NVe7SieGyQKFPiKQin2dY8LV.mp4",
   "creative-workshop":
     "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/40367-360-LovhxrX7kcdSINyPAu7xLgWlCNmTBJ.mp4",
 }
@@ -32,7 +32,7 @@ type Category =
   | "performance-art"
   | "poetry-slam"
   | "open-mic"
-  | "live-painting"
+  | "live-streaming"
   | "creative-workshop"
 
 // Define destination paths for each category
@@ -41,7 +41,7 @@ const CATEGORY_DESTINATIONS = {
   "performance-art": "/kiosk?category=performance-art",
   "poetry-slam": "/kiosk?category=poetry-slam",
   "open-mic": "/kiosk?category=open-mic",
-  "live-painting": "/kiosk?category=live-painting",
+  "live-streaming": "/kiosk?category=live-streaming",
   "creative-workshop": "/kiosk?category=creative-workshop",
 }
 
@@ -140,8 +140,8 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
         ],
         "poetry-slam": ["Urban Verses: Poetry Slam", "Spoken Word Revolution", "Poetic Justice: Open Mic Night"],
         "open-mic": ["Open Mic: Discover New Talent", "Acoustic Sessions Live", "Improv Night: Unscripted"],
-        "live-painting": [
-          "Live Painting: Abstract Landscapes",
+        "live-streaming": [
+          "Live Streaming: Abstract Landscapes",
           "Artist at Work: Studio Session",
           "Canvas to Creation: Live Art",
         ],
@@ -169,6 +169,7 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
       ticketPrice: Math.floor(Math.random() * 15) + 5,
       description: "Join this amazing event and experience art in its creation.",
       image: "/placeholder.svg?height=200&width=400",
+      videoUrl: RELIABLE_VIDEOS[selectedCategory],
     }
     setCurrentEvent(event)
 
@@ -315,8 +316,8 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
         ],
         "poetry-slam": ["Urban Verses: Poetry Slam", "Spoken Word Revolution", "Poetic Justice: Open Mic Night"],
         "open-mic": ["Open Mic: Discover New Talent", "Acoustic Sessions Live", "Improv Night: Unscripted"],
-        "live-painting": [
-          "Live Painting: Abstract Landscapes",
+        "live-streaming": [
+          "Live Streaming: Abstract Landscapes",
           "Artist at Work: Studio Session",
           "Canvas to Creation: Live Art",
         ],
@@ -344,6 +345,7 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
       ticketPrice: Math.floor(Math.random() * 15) + 5,
       description: "Join this amazing event and experience art in its creation.",
       image: "/placeholder.svg?height=200&width=400",
+      videoUrl: RELIABLE_VIDEOS[selectedCategory],
     }
     setCurrentEvent(event)
 
@@ -427,7 +429,7 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
 
   return (
     <Card className="overflow-hidden border-2 border-primary/20 shadow-lg w-full">
-      <div className="relative aspect-video w-full max-h-[400px] md:max-h-[500px] lg:max-h-[600px]">
+      <div className="relative aspect-video w-full min-h-[220px] sm:min-h-[280px] md:min-h-[360px] lg:min-h-[420px]">
         {/* Loading indicator */}
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
@@ -456,7 +458,7 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
           <div className="w-full h-full relative cursor-pointer" onClick={handleVideoClick}>
             <video
               ref={videoRef}
-              className="w-full h-full object-contain bg-black"
+              className="w-full h-full object-cover bg-black"
               loop
               muted={isMuted}
               playsInline
@@ -607,16 +609,16 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
               <span className="sr-only">Open Mic</span>
             </TabsTrigger>
             <TabsTrigger
-              value="live-painting"
-              onClick={() => setSelectedCategory("live-painting")}
+              value="live-streaming"
+              onClick={() => setSelectedCategory("live-streaming")}
               className="data-[state=active]:bg-primary/10 py-2 px-1 sm:px-2 flex justify-center items-center h-12"
             >
               <ArtCategoryIcon
-                category="live-painting"
+                category="live-streaming"
                 size="sm"
-                className={selectedCategory === "live-painting" ? "text-primary" : "text-muted-foreground"}
+                className={selectedCategory === "live-streaming" ? "text-primary" : "text-muted-foreground"}
               />
-              <span className="sr-only">Painting</span>
+              <span className="sr-only">Streaming</span>
             </TabsTrigger>
             <TabsTrigger
               value="creative-workshop"

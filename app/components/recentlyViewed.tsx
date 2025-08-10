@@ -32,7 +32,7 @@ export function RecentlyViewed() {
       {
         id: 2,
         title: "Abstract Live Painting",
-        category: "live-painting",
+        category: "live-streaming",
         href: "/kiosk/2",
         timestamp: Date.now() - 1000 * 60 * 15, // 15 minutes ago
       },

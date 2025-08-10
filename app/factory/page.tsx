@@ -32,7 +32,7 @@ type Category =
   | "performance-art"
   | "poetry-slam"
   | "open-mic"
-  | "live-painting"
+  | "live-streaming"
   | "creative-workshop"
 type SaleType = "cumulative-tips" | "blind-auction" | "quadratic-tipping"
 type Duration = 15 | 30 | 60
@@ -278,7 +278,7 @@ export default function EventFactory() {
                 { id: "performance-art", label: "Performance Art" },
                 { id: "poetry-slam", label: "Poetry Slam" },
                 { id: "open-mic", label: "Open Mic/Improv" },
-                { id: "live-painting", label: "Live Painting" },
+                { id: "live-streaming", label: "Live Streaming" },
                 { id: "creative-workshop", label: "Creative Workshop" },
               ].map((category) => (
                 <div

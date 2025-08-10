@@ -65,16 +65,30 @@ const config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        // Brand Color Palette
+        // Underground Bauhaus Brand Palette - Pure Geometric Rebellion
         contrast: {
           DEFAULT: "hsl(var(--contrast))",
           foreground: "hsl(var(--contrast-foreground))",
         },
+        // Core Bauhaus Triangle: Black, White, Red
+        bauhaus: {
+          black: "#000000",     // void - absolute zero
+          white: "#FFFFFF",     // light - pure existence 
+          red: "#FF0000",       // blood - raw energy
+          // Underground accent disruptions
+          electric: "#00FF00",  // neon rebellion
+          void: "#0000FF",      // digital abyss
+          // Concrete textures
+          concrete: "#1A1A1A",  // underground walls
+          chalk: "#F8F8F8",     // graffiti medium
+          rust: "#8B0000",      // decay aesthetic
+        },
+        // Legacy support during transition
         haus: {
-          red: "#FF3B30",
+          red: "#FF0000",
           black: "#000000",
           white: "#FFFFFF", 
-          gray: "#F5F5F5",
+          gray: "#1A1A1A",
         },
       },
       borderRadius: {

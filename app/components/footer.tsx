@@ -12,7 +12,7 @@ export const Footer = memo(function Footer() {
           <div className="flex flex-col items-start">
             <div className="flex items-center gap-2 w-full">
               <HausLogo className="w-8 h-4" />
-              <span className="font-bold text-lg tracking-wide bauhaus-text">HAUS</span>
+              <span className="font-bold text-lg tracking-wide bauhaus-text">haus</span>
             </div>
             <p className="mt-2 text-sm text-muted-foreground w-full">reality, in the making.</p>
             {/* Hidden span with encrypted message */}
@@ -54,7 +54,7 @@ export const Footer = memo(function Footer() {
 
         <div className="mt-8 pt-6 border-t">
           <p className="text-xs text-muted-foreground text-center">
-            © {new Date().getFullYear()} Haus. All rights reserved.
+            © {new Date().getFullYear()} haus. all rights reserved.
           </p>
         </div>
       </div>

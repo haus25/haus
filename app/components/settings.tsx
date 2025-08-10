@@ -380,7 +380,7 @@ export function SettingsModal({ children }: SettingsModalProps) {
                             "performance-art",
                             "poetry-slam",
                             "open-mic",
-                            "live-painting",
+                            "live-streaming",
                             "creative-workshop",
                           ].map((category) => (
                             <div

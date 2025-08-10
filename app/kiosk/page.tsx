@@ -25,7 +25,7 @@ type Category =
   | "performance-art"
   | "poetry-slam"
   | "open-mic"
-  | "live-painting"
+  | "live-streaming"
   | "creative-workshop"
 
 type SortOption = "date-earliest" | "date-latest" | "price-low-high" | "price-high-low"
@@ -390,7 +390,7 @@ export default function TicketKiosk() {
                     { id: "performance-art", label: "Performance Art" },
                     { id: "poetry-slam", label: "Poetry Slam" },
                     { id: "open-mic", label: "Open Mic" },
-                    { id: "live-painting", label: "Live Painting" },
+                    { id: "live-streaming", label: "Live Streaming" },
                     { id: "creative-workshop", label: "Creative Workshop" },
                   ].map((category) => (
                     <div

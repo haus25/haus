@@ -4,89 +4,93 @@
 
 @layer base {
   :root {
-    --background: 0 0% 98%;
-    --foreground: 0 0% 10%;
+    /* Underground Bauhaus Core - Absolute Opposition */
+    --background: 0 0% 100%; /* Pure white void */
+    --foreground: 0 0% 0%;   /* Absolute black */
 
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 10%;
+    --card-foreground: 0 0% 0%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 10%;
+    --popover-foreground: 0 0% 0%;
 
-    /* Brand Color Palette - Primary (Red) */
-    --primary: 0 83% 59%; /* #FF3B30 */
+    /* Bauhaus Primary - Blood Red Disruption */
+    --primary: 0 100% 50%; /* Pure #FF0000 */
     --primary-foreground: 0 0% 100%;
 
-    /* Brand Color Palette - Secondary (Gray) */
-    --secondary: 0 0% 96%; /* #F5F5F5 */
-    --secondary-foreground: 0 0% 10%;
+    /* Underground Secondary - Concrete Texture */
+    --secondary: 0 0% 10%; /* #1A1A1A concrete */
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 0 0% 96%;
-    --muted-foreground: 0 0% 45%;
+    --muted: 0 0% 10%;
+    --muted-foreground: 0 0% 70%;
 
-    /* Brand Color Palette - Accent */
-    --accent: 0 0% 96%;
-    --accent-foreground: 0 0% 10%;
+    /* Electric Accent - Neon Rebellion */
+    --accent: 120 100% 50%; /* #00FF00 electric */
+    --accent-foreground: 0 0% 0%;
 
-    /* Brand Color Palette - Contrast (Black) */
-    --contrast: 0 0% 0%; /* #000000 */
+    /* Contrast - Pure Opposition */
+    --contrast: 0 0% 0%; /* Absolute black */
     --contrast-foreground: 0 0% 100%;
 
     --destructive: 0 100% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 90%;
-    --input: 0 0% 90%;
-    --ring: 0 83% 59%; /* Primary color ring */
+    --border: 0 0% 20%;
+    --input: 0 0% 10%;
+    --ring: 0 100% 50%; /* Red ring */
 
-    --radius: 0.5rem;
+    --radius: 0rem; /* No curves - pure geometric */
 
-    /* Bauhaus-inspired font settings */
-    --font-sans: var(--font-work-sans), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-    --font-heading: var(--font-work-sans), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    /* Underground Typography - Brutal Sans */
+    --font-sans: var(--font-work-sans), "helvetica neue", helvetica, arial, sans-serif;
+    --font-heading: var(--font-work-sans), "helvetica neue", helvetica, arial, sans-serif;
+    --font-mono: "courier new", courier, monospace;
   }
 
   .dark {
-    --background: 0 0% 10%;
-    --foreground: 0 0% 98%;
+    /* Dark Mode - Inverted Underground */
+    --background: 0 0% 0%;   /* Absolute black void */
+    --foreground: 0 0% 100%; /* Pure white */
 
-    --card: 0 0% 15%;
-    --card-foreground: 0 0% 98%;
+    --card: 0 0% 5%;
+    --card-foreground: 0 0% 100%;
 
-    --popover: 0 0% 15%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 0 0% 5%;
+    --popover-foreground: 0 0% 100%;
 
-    /* Brand Color Palette - Primary (Red) - unchanged for dark */
-    --primary: 0 83% 59%; /* #FF3B30 */
+    /* Primary Red - Unchanged Pure Power */
+    --primary: 0 100% 50%; /* Pure #FF0000 */
     --primary-foreground: 0 0% 100%;
 
-    /* Brand Color Palette - Secondary (adjusted for dark) */
-    --secondary: 0 0% 15%;
-    --secondary-foreground: 0 0% 98%;
+    /* Underground Secondary - Darker Concrete */
+    --secondary: 0 0% 15%; /* Darker concrete */
+    --secondary-foreground: 0 0% 100%;
 
     --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 65%;
+    --muted-foreground: 0 0% 70%;
 
-    /* Brand Color Palette - Accent (adjusted for dark) */
-    --accent: 0 0% 15%;
-    --accent-foreground: 0 0% 98%;
+    /* Electric Accent - Maintained Rebellion */
+    --accent: 120 100% 50%; /* #00FF00 electric */
+    --accent-foreground: 0 0% 0%;
 
-    /* Brand Color Palette - Contrast (White in dark mode) */
-    --contrast: 0 0% 100%; /* #FFFFFF */
+    /* Contrast - Inverted */
+    --contrast: 0 0% 100%; /* Pure white */
     --contrast-foreground: 0 0% 0%;
 
     --destructive: 0 100% 50%;
     --destructive-foreground: 0 0% 100%;
 
     --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 0 83% 59%; /* Primary color ring */
+    --input: 0 0% 15%;
+    --ring: 0 100% 50%; /* Red ring */
   }
 }
 
 @layer base {
   * {
     @apply border-border;
+    text-transform: lowercase; /* brand mandate: no capitals anywhere */
   }
   body {
     @apply bg-background text-foreground;
@@ -109,12 +113,7 @@
 
 /* Add utility classes for Bauhaus-inspired design */
 @layer utilities {
-  .rta-text::after {
-    content: "s";
-    text-transform: lowercase;
-  }
-
-  /* Existing Bauhaus utilities remain unchanged */
+  /* remove forced uppercase; respect global lowercase */
   .bauhaus-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -122,10 +121,207 @@
   }
 
   .bauhaus-text {
-    @apply uppercase tracking-wide font-medium;
+    @apply tracking-wide font-medium;
   }
 
   .bauhaus-title {
-    @apply text-2xl md:text-4xl font-bold tracking-tight uppercase;
+    @apply text-2xl md:text-4xl font-bold tracking-tight;
   }
+
+  /* glass and depth utilities (visual-only) */
+  .glass-surface {
+    background: hsl(var(--background) / 0.8);
+    border: 1px solid hsl(var(--border) / 0.4);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  .glass-morphism {
+    background: hsl(var(--background) / 0.6);
+    border: 1px solid hsl(var(--border) / 0.3);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+  }
+
+  .depth-subtle {
+    box-shadow:
+      0 1px 3px hsl(var(--foreground) / 0.06),
+      0 2px 8px hsl(var(--foreground) / 0.04);
+  }
+
+  .depth-moderate {
+    box-shadow:
+      0 4px 12px hsl(var(--foreground) / 0.08),
+      0 8px 24px hsl(var(--foreground) / 0.06);
+  }
+
+  .depth-dramatic {
+    box-shadow:
+      0 8px 24px hsl(var(--foreground) / 0.12),
+      0 16px 48px hsl(var(--foreground) / 0.08);
+  }
+
+  .live-element {
+    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    transform-style: preserve-3d;
+    will-change: transform, filter;
+  }
+
+  /* underground live elements - objects with soul */
+  .live-element {
+    transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+    transform-style: preserve-3d;
+    will-change: transform, filter;
+  }
+
+  .live-element:hover {
+    transform: translateY(-3px) translateZ(6px) scale(1.02) rotate(0.5deg);
+    filter: brightness(1.1) saturate(1.2) contrast(1.05);
+    box-shadow: 
+      0 8px 32px rgba(255, 0, 0, 0.15),
+      0 16px 64px rgba(0, 255, 0, 0.05);
+  }
+
+  /* asymmetric section layouts - preserve container alignment */
+  .section-chaos {
+    transform: skew(0.2deg) rotate(-0.1deg);
+    margin: 2rem 0; /* remove negative margins causing edge collisions */
+    padding: 2rem 0; /* let inner .container handle horizontal padding */
+  }
+
+  /* underground button mutations */
+  .btn-underground {
+    @apply px-6 py-3 font-bold tracking-wide; /* reduce weight for readability */
+    background: linear-gradient(45deg, #000000, #1a1a1a);
+    color: #ffffff;
+    border: 2px solid #ff0000;
+    transform: skew(-1deg) rotate(0.25deg);
+    box-shadow: 3px 3px 0px #ff0000;
+    transition: all 0.2s ease;
+  }
+  .btn-underground:hover {
+    transform: skew(-0.5deg) rotate(-0.1deg) translateY(-2px);
+    box-shadow: 5px 5px 0px #ff0000, 0 8px 16px rgba(255, 0, 0, 0.25);
+    background: linear-gradient(45deg, #1a1a1a, #333333);
+  }
+  .btn-underground:active {
+    transform: skew(-1deg) rotate(0.25deg) translateY(1px);
+    box-shadow: 2px 2px 0px #ff0000;
+  }
+
+  /* electric accent elements */
+  .electric-accent {
+    color: #00ff00;
+    text-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00;
+    animation: electric-flicker 2s infinite alternate;
+  }
+
+  @keyframes electric-flicker {
+    0%, 100% {
+      opacity: 1;
+      text-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00;
+    }
+    50% {
+      opacity: 0.8;
+      text-shadow: 0 0 5px #00ff00, 0 0 10px #00ff00;
+    }
+  }
+
+  /* box shadow utilities */
+  .box-shadow-brutal {
+    box-shadow: 4px 4px 0px #ff0000;
+  }
+
+  /* disruption animations */
+  .glitch {
+    animation: glitch 3s infinite linear;
+  }
+
+  @keyframes glitch {
+    0%, 99% { transform: none; }
+    1% { transform: skew(0.5deg); }
+    2% { transform: skew(-0.5deg); }
+    3% { transform: none; }
+    4% { transform: skew(0.2deg); }
+    5% { transform: skew(-0.2deg); }
+  }
+
+  /* underground pulsing */
+  .underground-pulse {
+    animation: underground-pulse 4s ease-in-out infinite;
+  }
+
+  @keyframes underground-pulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.8;
+      transform: scale(1.02) rotate(0.2deg);
+    }
+  }
+}
+
+/* Layout helpers to bring back sane defaults without altering copy/UX */
+@layer components {
+  /* section titles */
+  .underground-title {
+    @apply text-3xl md:text-5xl font-bold tracking-tight; /* avoid extra-bold */
+  }
+
+  /* decorative underline with safe contrast */
+  .graffiti-underline {
+    position: relative;
+  }
+  .graffiti-underline::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: -0.35rem;
+    width: 40%;
+    height: 3px;
+    background: hsl(var(--primary));
+  }
+
+  /* hand-drawn container aesthetic */
+  .handdrawn-box {
+    @apply bg-card border border-border;
+    box-shadow:
+      0 1px 3px hsl(var(--foreground) / 0.06),
+      0 4px 12px hsl(var(--foreground) / 0.05);
+  }
+
+  /* subtle scribble texture */
+  .scribble-bg {
+    background-image: radial-gradient(hsl(var(--foreground) / 0.05) 1px, transparent 1px);
+    background-size: 12px 12px;
+  }
+
+  /* bottom divider line */
+  .graffiti-line {
+    background: linear-gradient(to right, hsl(var(--border)), transparent);
+  }
+
+  /* support grid used in categories */
+  .underground-grid {
+    display: grid;
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    gap: 1.25rem;
+  }
+  @media (min-width: 640px) {
+    .underground-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (min-width: 1024px) {
+    .underground-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+}
+
+/* Tone down extreme bold globally to improve readability */
+@layer utilities {
+  .font-black { font-weight: 800 !important; }
 }

@@ -69,12 +69,12 @@ export const Navbar = memo(function Navbar() {
 
   return (
     <>
-      <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-sm">
+      <header className="sticky top-0 z-50 w-full glass-surface backdrop-blur-xl">
         <div className="container flex h-16 items-center justify-between">
           <div className="flex items-center gap-4">
             <Link href="/" className="flex items-center gap-2">
               <HausLogo className="w-8 h-4" />
-              <span className="font-bold text-lg tracking-wide bauhaus-text">HAUS</span>
+              <span className="font-bold text-lg tracking-wide bauhaus-text">haus</span>
             </Link>
             <div className="hidden md:flex ml-2">
               <p className="text-sm font-medium">reality, in the making.</p>

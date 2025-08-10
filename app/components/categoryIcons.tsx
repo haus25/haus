@@ -5,7 +5,7 @@ type ArtCategoryType =
   | "performance-art"
   | "poetry-slam"
   | "open-mic"
-  | "live-painting"
+  | "live-streaming"
   | "creative-workshop"
 
 interface ArtCategoryIconProps {
@@ -58,7 +58,7 @@ export function ArtCategoryIcon({ category, size = "md", className }: ArtCategor
             <rect x="42.5" y="70" width="15" height="15" fill="currentColor" />
           </svg>
         )
-      case "live-painting":
+      case "live-streaming":
         return (
           <svg className={cn(sizes[size], className)} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
             <rect x="20" y="50" width="30" height="30" fill="currentColor" />

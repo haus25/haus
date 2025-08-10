@@ -18,7 +18,7 @@ const EVENT_FACTORY_ABI = [
       {
         "name": "",
         "type": "tuple",
-        "internalType": "struct IEventFactory.EventData", 
+        "internalType": "struct EventFactory.EventData", 
         "components": [
           {"name": "creator", "type": "address", "internalType": "address"},
           {"name": "startDate", "type": "uint256", "internalType": "uint256"},
@@ -27,6 +27,7 @@ const EVENT_FACTORY_ABI = [
           {"name": "metadataURI", "type": "string", "internalType": "string"},
           {"name": "artCategory", "type": "string", "internalType": "string"},
           {"name": "KioskAddress", "type": "address", "internalType": "address"},
+          {"name": "curationAddress", "type": "address", "internalType": "address"},
           {"name": "finalized", "type": "bool", "internalType": "bool"}
         ]
       }
@@ -39,6 +40,24 @@ const EVENT_FACTORY_ABI = [
     "inputs": [],
     "outputs": [{"name": "", "type": "uint256", "internalType": "uint256"}],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getCurationContract",
+    "inputs": [{"name": "eventId", "type": "uint256", "internalType": "uint256"}],
+    "outputs": [{"name": "", "type": "address", "internalType": "address"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "deployCurationForEvent",
+    "inputs": [
+      {"name": "eventId", "type": "uint256", "internalType": "uint256"},
+      {"name": "scope", "type": "uint256", "internalType": "uint256"},
+      {"name": "description", "type": "string", "internalType": "string"}
+    ],
+    "outputs": [{"name": "curationAddress", "type": "address", "internalType": "address"}],
+    "stateMutability": "nonpayable"
   }
 ] as const
 
@@ -93,6 +112,8 @@ export async function fetchEvent(eventId: string): Promise<any> {
       reservePrice: formatEther(BigInt(eventData.reservePrice.toString())),
       creator: eventData.creator,
       ticketKioskAddress: eventData.KioskAddress,
+      curationAddress: eventData.curationAddress,
+      hasCuration: eventData.curationAddress !== '0x0000000000000000000000000000000000000000',
       contentUri: eventData.metadataURI || null,
       finalized: eventData.finalized
     }

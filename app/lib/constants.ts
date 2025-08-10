@@ -99,7 +99,8 @@ export const EVENT_FACTORY_ABI = [
           {"name": "reservePrice", "type": "uint256", "internalType": "uint256"},
           {"name": "metadataURI", "type": "string", "internalType": "string"},
           {"name": "artCategory", "type": "string", "internalType": "string"},
-          {"name": "ticketKioskAddress", "type": "address", "internalType": "address"},
+          {"name": "KioskAddress", "type": "address", "internalType": "address"},
+          {"name": "curationAddress", "type": "address", "internalType": "address"},
           {"name": "finalized", "type": "bool", "internalType": "bool"}
         ]
       }
@@ -232,7 +233,7 @@ export const getRandomVideo = (category: string) => {
       "https://assets.mixkit.co/videos/preview/mixkit-man-playing-an-acoustic-guitar-on-stage-1725-large.mp4",
       "https://assets.mixkit.co/videos/preview/mixkit-man-playing-a-guitar-on-stage-1718-large.mp4",
     ],
-    "live-painting": [
+    "live-streaming": [
       "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/443-360-kRKFI1NVe7SieGyQKFPiKQin2dY8LV.mp4",
       "https://assets.mixkit.co/videos/preview/mixkit-girl-drawing-on-a-notebook-168-large.mp4",
       "https://assets.mixkit.co/videos/preview/mixkit-top-view-of-woman-drawing-in-a-notebook-168-large.mp4",
