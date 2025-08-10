@@ -395,7 +395,7 @@ export default function TicketKiosk() {
                   ].map((category) => (
                     <div
                       key={category.id}
-                      className={`flex items-center p-2 rounded-md cursor-pointer transition-colors ${
+                      className={`group flex items-center p-2 rounded-md cursor-pointer transition-colors ${
                         selectedCategories.includes(category.id as Category)
                           ? "bg-primary/10 border-l-2 border-primary"
                           : "hover:bg-secondary"
@@ -405,15 +405,17 @@ export default function TicketKiosk() {
                       <ArtCategoryIcon
                         category={category.id as Category}
                         size="sm"
-                        className={`mr-2 ${
+                        className={`mr-2 transition-colors ${
                           selectedCategories.includes(category.id as Category)
                             ? "text-primary"
-                            : "text-muted-foreground"
+                            : "text-muted-foreground group-hover:text-contrast-foreground"
                         }`}
                       />
                       <span
-                        className={`text-sm font-medium ${
-                          selectedCategories.includes(category.id as Category) ? "text-primary" : "text-foreground"
+                        className={`text-sm font-medium transition-colors ${
+                          selectedCategories.includes(category.id as Category)
+                            ? "text-primary"
+                            : "text-foreground group-hover:text-contrast-foreground"
                         }`}
                       >
                         {category.label}

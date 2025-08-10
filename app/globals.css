@@ -25,9 +25,9 @@
     --muted: 0 0% 10%;
     --muted-foreground: 0 0% 70%;
 
-    /* Electric Accent - Neon Rebellion */
-    --accent: 120 100% 50%; /* #00FF00 electric */
-    --accent-foreground: 0 0% 0%;
+    /* Electric Accent - tuned to accessible lime (less harsh) */
+    --accent: 100 95% 47%; /* accessible neon-lime */
+    --accent-foreground: 0 0% 10%;
 
     /* Contrast - Pure Opposition */
     --contrast: 0 0% 0%; /* Absolute black */
@@ -189,8 +189,10 @@
     padding: 2rem 0; /* let inner .container handle horizontal padding */
   }
 
+  /* section offset utilities removed by request */
+
   /* underground button mutations */
-  .btn-underground {
+   .btn-underground {
     @apply px-6 py-3 font-bold tracking-wide; /* reduce weight for readability */
     background: linear-gradient(45deg, #000000, #1a1a1a);
     color: #ffffff;
@@ -211,21 +213,24 @@
 
   /* electric accent elements */
   .electric-accent {
-    color: #00ff00;
-    text-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00;
+    color: hsl(var(--accent));
+    text-shadow: 0 0 10px hsla(var(--accent) / 0.8), 0 0 20px hsla(var(--accent) / 0.4);
     animation: electric-flicker 2s infinite alternate;
   }
 
   @keyframes electric-flicker {
     0%, 100% {
       opacity: 1;
-      text-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00;
+      text-shadow: 0 0 10px hsla(var(--accent) / 0.8), 0 0 20px hsla(var(--accent) / 0.4);
     }
     50% {
       opacity: 0.8;
-      text-shadow: 0 0 5px #00ff00, 0 0 10px #00ff00;
+      text-shadow: 0 0 5px hsla(var(--accent) / 0.6), 0 0 10px hsla(var(--accent) / 0.3);
     }
   }
+
+  /* Improve generic hover states where background changes; keep text readable */
+  .hover\:bg-secondary:hover { color: hsl(var(--secondary-foreground)); }
 
   /* box shadow utilities */
   .box-shadow-brutal {

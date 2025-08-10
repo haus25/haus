@@ -11,13 +11,15 @@ const buttonVariants = cva(
       variant: {
         default: "btn-underground",
         destructive: "bg-red-500 text-white border-2 border-red-700 transform skew-x-1 hover:skew-x-0 hover:scale-105 box-shadow-brutal",
-        outline: "border-2 border-current bg-transparent hover:bg-current hover:text-background transform -skew-y-1 hover:skew-y-0",
+        // Force explicit foreground colors to avoid contrast loss when parent sets a light text color
+        outline: "border-2 border-foreground text-foreground bg-transparent hover:bg-foreground hover:text-background transform -skew-y-1 hover:skew-y-0",
         secondary: "bg-bauhaus-concrete text-bauhaus-white border-2 border-bauhaus-white transform skew-y-1 hover:skew-y-0",
         ghost: "hover:bg-bauhaus-concrete hover:text-bauhaus-white transform rotate-1 hover:rotate-0",
         link: "text-bauhaus-red underline-offset-4 hover:underline graffiti-underline",
         minimal: "bg-transparent text-foreground hover:bg-bauhaus-concrete/20 transform -rotate-0.5 hover:rotate-0",
         underground: "btn-underground",
-        electric: "bg-bauhaus-electric text-bauhaus-black border-2 border-bauhaus-black electric-accent",
+        // Keep electric readable on hover without changing text color
+        electric: "bg-bauhaus-electric text-bauhaus-black border-2 border-bauhaus-black hover:brightness-95",
       },
       size: {
         default: "h-10 px-4 py-2",

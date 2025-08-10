@@ -417,7 +417,7 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold">Your Tickets</h2>
               <div className="flex space-x-2">
-                <Button variant="outline" onClick={loadUserTickets} disabled={ticketsLoading}>
+                <Button variant="outline" className="hover:text-background" onClick={loadUserTickets} disabled={ticketsLoading}>
                   <RefreshCw className={`h-4 w-4 mr-2 ${ticketsLoading ? 'animate-spin' : ''}`} />
                   Refresh
                 </Button>

@@ -27,7 +27,12 @@ export const Navbar = memo(function Navbar() {
       return (
         <>
           <Link href="/factory">
-            <Button variant="outline" size="sm" className="hidden md:flex">
+            {/* Ensure readable hover colors in light/dark surfaces */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden md:flex text-foreground hover:text-background"
+            >
               <Plus className="h-4 w-4 mr-2" />
               Create
             </Button>
@@ -42,7 +47,9 @@ export const Navbar = memo(function Navbar() {
         <Link
           href="/factory"
           className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-            pathname.includes("/factory") ? "bg-primary/10 text-primary" : "hover:bg-secondary"
+            pathname.includes("/factory")
+              ? "bg-primary/10 text-primary"
+              : "hover:bg-secondary hover:text-secondary-foreground text-foreground"
           }`}
         >
           Factory
@@ -50,7 +57,9 @@ export const Navbar = memo(function Navbar() {
         <Link
           href="/kiosk"
           className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-            pathname.includes("/kiosk") ? "bg-primary/10 text-primary" : "hover:bg-secondary"
+            pathname.includes("/kiosk")
+              ? "bg-primary/10 text-primary"
+              : "hover:bg-secondary hover:text-secondary-foreground text-foreground"
           }`}
         >
           Kiosk
@@ -58,7 +67,9 @@ export const Navbar = memo(function Navbar() {
         <Link
           href="/room"
           className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-            pathname.includes("/room") ? "bg-primary/10 text-primary" : "hover:bg-secondary"
+            pathname.includes("/room")
+              ? "bg-primary/10 text-primary"
+              : "hover:bg-secondary hover:text-secondary-foreground text-foreground"
           }`}
         >
           Room

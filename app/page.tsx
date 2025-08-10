@@ -82,7 +82,8 @@ export default function Home() {
                   >
                     discover events
                   </Button>
-                  <Button size="lg" variant="electric" onClick={() => handleNavigate("/factory")}>
+                  {/* Use outline to avoid harsh acid green and maintain readability */}
+                  <Button size="lg" variant="outline" className="text-foreground hover:text-background" onClick={() => handleNavigate("/factory")}>
                     create event
                   </Button>
                 </div>
@@ -90,7 +91,8 @@ export default function Home() {
                 <span className="hidden" data-jabyl={HIDDEN_MESSAGE_1}></span>
               </div>
 
-              <HandDrawnContainer className="transform rotate-2 hover:rotate-0 transition-all duration-500">
+              {/* Raise TV and nudge slightly right */}
+              <HandDrawnContainer className="transform rotate-2 hover:rotate-0 transition-all duration-500 md:-mt-10 md:ml-6">
                 <TvPlayer onConnect={handleConnect} />
               </HandDrawnContainer>
               
@@ -109,7 +111,7 @@ export default function Home() {
         <UndergroundSection 
           title="real-time assets (rtas)"
           quote="chaos is just order waiting to be discovered"
-          className="py-16 md:py-24 bg-bauhaus-concrete"
+          className="py-16 md:py-24 bg-bauhaus-concrete text-bauhaus-white"
         >
           <div className="container px-4 md:px-6">
             <ParallaxWrapper speed={0.2}>
@@ -121,33 +123,33 @@ export default function Home() {
             </ParallaxWrapper>
 
             <ChaosGrid>
-              <HandDrawnContainer className="text-center p-8 transform -rotate-1 hover:rotate-0 transition-all duration-500">
-                <div className="p-4 bg-bauhaus-red/20 mb-6 transform rotate-2">
+              <HandDrawnContainer className="text-center p-8 transform -rotate-1 hover:rotate-0 transition-all duration-500 bg-background">
+                <div className="p-4 bg-bauhaus-red/10 mb-6 transform rotate-2">
                   <Clock className="h-12 w-12 text-bauhaus-red mx-auto" />
                 </div>
                 <h3 className="text-xl font-black mb-4 graffiti-underline">dynamic creation</h3>
-                <p className="text-muted-foreground font-medium">
+                <p className="text-foreground/80 font-medium">
                   unlike traditional nfts, rtas evolve in real-time during live performances, capturing the entire
                   creative process.
                 </p>
               </HandDrawnContainer>
 
-              <HandDrawnContainer className="text-center p-8 transform rotate-1 hover:rotate-0 transition-all duration-500">
-                <div className="p-4 bg-bauhaus-electric/20 mb-6 transform -rotate-1">
+              <HandDrawnContainer className="text-center p-8 transform rotate-1 hover:rotate-0 transition-all duration-500 bg-background">
+                <div className="p-4 bg-bauhaus-electric/10 mb-6 transform -rotate-1">
                   <Sparkles className="h-12 w-12 text-bauhaus-electric mx-auto" />
                 </div>
                 <h3 className="text-xl font-black mb-4 graffiti-underline">interactive value</h3>
-                <p className="text-muted-foreground font-medium">
+                <p className="text-foreground/80 font-medium">
                   the value of an rta is determined by audience participation and appreciation during the live event.
                 </p>
               </HandDrawnContainer>
 
-              <HandDrawnContainer className="text-center p-8 transform -rotate-0.5 hover:rotate-0 transition-all duration-500">
-                <div className="p-4 bg-bauhaus-void/20 mb-6 transform rotate-1">
+              <HandDrawnContainer className="text-center p-8 transform -rotate-0.5 hover:rotate-0 transition-all duration-500 bg-background">
+                <div className="p-4 bg-bauhaus-void/10 mb-6 transform rotate-1">
                   <Layers className="h-12 w-12 text-bauhaus-void mx-auto" />
                 </div>
                 <h3 className="text-xl font-black mb-4 graffiti-underline">multi-layered ownership</h3>
-                <p className="text-muted-foreground font-medium">
+                <p className="text-foreground/80 font-medium">
                   rtas distribute value across creators, curators, and participants, establishing a new paradigm for
                   collaboration.
                 </p>
@@ -168,7 +170,7 @@ export default function Home() {
 
         {/* Web3 Innovation Section - Underground Tech */}
         <UndergroundSection 
-          title="web3 innovation"
+          title="decentralized innovation"
           quote="authentic voice breaks through digital noise"
           className="py-16 md:py-24"
         >
@@ -294,8 +296,8 @@ export default function Home() {
 
         {/* CTA Section - Enter the Underground */}
         <UndergroundSection 
-          title="ready to disrupt?"
-          quote="live performance is democracy in action"
+          title="ready to try?"
+          quote="f*ck stage fright"
           className="py-12 md:py-20 bg-bauhaus-black text-bauhaus-white"
           has3D={false}
         >
@@ -303,25 +305,27 @@ export default function Home() {
             <div className="flex flex-col items-center text-center space-y-8">
               <ParallaxWrapper speed={0.4}>
                 <p className="md:text-lg max-w-[700px] font-bold brutal-text">
-                  join haus²⁵ today and become part of a community that values creativity and supports artists.
+                  join us on stage, and become part of a community that values creativity and message.
                 </p>
               </ParallaxWrapper>
               
               <div className="relative">
+                {/* Accessible high-contrast CTA */}
                 <Button 
                   size="lg" 
-                  variant="electric" 
-                  className="mt-8 text-xl px-12 py-6 glitch" 
+                  variant="underground" 
+                  className="mt-8 text-xl px-12 py-6 glitch"
                   onClick={() => handleConnect()}
                 >
-                  <ElectricAccent intensity="intense">enter the haus</ElectricAccent>
+                  enter the haus
                 </Button>
                 
                 {/* Underground accent elements */}
-                <div className="absolute -top-8 -left-8 w-16 h-16 opacity-30 flex items-center justify-center">
+                {/* soften 2/5 accents for readability */}
+                <div className="absolute -top-8 -left-8 w-16 h-16 opacity-20 flex items-center justify-center">
                   <div className="text-6xl font-black text-bauhaus-red transform rotate-12">²</div>
                 </div>
-                <div className="absolute -bottom-8 -right-8 w-16 h-16 opacity-30 flex items-center justify-center">
+                <div className="absolute -bottom-8 -right-8 w-16 h-16 opacity-20 flex items-center justify-center">
                   <div className="text-6xl font-black text-bauhaus-electric transform -rotate-12">⁵</div>
                 </div>
               </div>
