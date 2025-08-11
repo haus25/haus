@@ -3,11 +3,8 @@
 import { createWalletClient, createPublicClient, custom, http } from 'viem'
 import { seiTestnet } from '../lib/sei'
 
-// Contract addresses from environment variables
-const CONTRACT_ADDRESSES = {
-  EVENT_FACTORY: process.env.NEXT_PUBLIC_EVENT_FACTORY!,
-  // Note: Curation contracts are deployed per-event, not global
-} as const
+// Import contract addresses from constants
+import { CONTRACT_ADDRESSES } from '../lib/constants'
 
 const CURATION_API_BASE = process.env.NEXT_PUBLIC_CURATION_URL || 'http://localhost:3001'
 
@@ -39,6 +36,8 @@ export interface CurationResult {
     schedule: any
     banner: any
     research?: any
+    title?: any
+    [key: string]: any // Allow dynamic aspect access
   }
   proxyAddress: string
   curationAddress?: string
@@ -303,6 +302,13 @@ export async function requestCurationPlan(
   eventData: EventData
 ): Promise<CurationResult> {
   try {
+    // First check if we already have a cached plan
+    const cachedPlan = getCachedCurationPlan(eventId, userAddress)
+    if (cachedPlan) {
+      console.log('CURATION_SERVICE: Using cached plan for event', eventId)
+      return cachedPlan
+    }
+
     const response = await fetch(`${CURATION_API_BASE}/request-plan`, {
       method: 'POST',
       headers: {
@@ -324,14 +330,20 @@ export async function requestCurationPlan(
     // The API returns the complete plan data directly
     const planData = result.plan || {}
     
-    return {
+    const curationResult: CurationResult = {
       success: result.success || true,
       eventId,
       metadataURI: result.metadataURI,
       curation: planData,
       proxyAddress: planData.proxyAddress || '',
+      curationAddress: result.curationAddress,
       generatedAt: planData.generatedAt || new Date().toISOString()
     }
+
+    // Cache the plan result for persistence
+    setCachedCurationPlan(eventId, userAddress, curationResult, result.conversationId)
+    
+    return curationResult
   } catch (error) {
     console.error('CURATION_SERVICE: Error requesting plan:', error)
     throw error
@@ -497,9 +509,136 @@ export async function acceptCurationProposal(
       throw new Error(`Proposal acceptance failed: ${response.statusText}`)
     }
 
-    return await response.json()
+    const result = await response.json()
+    
+    // Clear cached plan after acceptance
+    if (finalCuration.eventId) {
+      clearCachedCurationPlan(finalCuration.eventId)
+    }
+    
+    return result
   } catch (error) {
     console.error('CURATION_SERVICE: Error accepting proposal:', error)
     throw error
+  }
+}
+
+// ===== CURATION PLAN CACHING FUNCTIONS =====
+
+interface CachedCurationPlan {
+  plan: CurationResult
+  conversationId: string
+  timestamp: number
+  userAddress: string
+}
+
+/**
+ * Cache curation plan in localStorage with expiration
+ */
+export function setCachedCurationPlan(
+  eventId: string, 
+  userAddress: string, 
+  plan: CurationResult, 
+  conversationId: string
+): void {
+  try {
+    const cacheKey = `curation_plan_${eventId}`
+    const cidKey = `curation_cid_${eventId}_${userAddress.toLowerCase()}`
+    
+    const cacheData: CachedCurationPlan = {
+      plan,
+      conversationId,
+      timestamp: Date.now(),
+      userAddress: userAddress.toLowerCase()
+    }
+    
+    // Store in localStorage for fast access (like profile pattern)
+    localStorage.setItem(cacheKey, JSON.stringify(cacheData))
+    // Store conversation ID mapping for backend sync (minimal addition)
+    localStorage.setItem(cidKey, conversationId)
+    
+    console.log('CURATION_CACHE: Plan cached for event', eventId, 'conversation', conversationId)
+  } catch (error) {
+    console.error('CURATION_CACHE: Failed to cache plan:', error)
+  }
+}
+
+/**
+ * Get cached curation plan if valid and belongs to current user
+ */
+export function getCachedCurationPlan(eventId: string, userAddress: string): CurationResult | null {
+  try {
+    const cacheKey = `curation_plan_${eventId}`
+    const cached = localStorage.getItem(cacheKey)
+    
+    if (!cached) return null
+    
+    const cacheData: CachedCurationPlan = JSON.parse(cached)
+    
+    // Check if cache belongs to current user
+    if (cacheData.userAddress !== userAddress.toLowerCase()) {
+      clearCachedCurationPlan(eventId)
+      return null
+    }
+    
+    // Check if cache is still valid (24 hours)
+    const maxAge = 24 * 60 * 60 * 1000 // 24 hours in ms
+    if (Date.now() - cacheData.timestamp > maxAge) {
+      clearCachedCurationPlan(eventId)
+      return null
+    }
+    
+    console.log('CURATION_CACHE: Using cached plan for event', eventId)
+    return cacheData.plan
+  } catch (error) {
+    console.error('CURATION_CACHE: Failed to get cached plan:', error)
+    clearCachedCurationPlan(eventId)
+    return null
+  }
+}
+
+/**
+ * Clear cached curation plan
+ */
+export function clearCachedCurationPlan(eventId: string): void {
+  try {
+    const cacheKey = `curation_plan_${eventId}`
+    localStorage.removeItem(cacheKey)
+    console.log('CURATION_CACHE: Cleared cache for event', eventId)
+  } catch (error) {
+    console.error('CURATION_CACHE: Failed to clear cache:', error)
+  }
+}
+
+/**
+ * Get cached conversation ID for an event
+ */
+export function getCachedConversationId(eventId: string, userAddress: string): string | null {
+  try {
+    // First check direct CID storage (faster, like profile pattern)
+    const cidKey = `curation_cid_${eventId}_${userAddress.toLowerCase()}`
+    const directCid = localStorage.getItem(cidKey)
+    
+    if (directCid) {
+      return directCid
+    }
+    
+    // Fallback to full cache data
+    const cacheKey = `curation_plan_${eventId}`
+    const cached = localStorage.getItem(cacheKey)
+    
+    if (!cached) return null
+    
+    const cacheData: CachedCurationPlan = JSON.parse(cached)
+    
+    // Check if cache belongs to current user
+    if (cacheData.userAddress !== userAddress.toLowerCase()) {
+      return null
+    }
+    
+    return cacheData.conversationId
+  } catch (error) {
+    console.error('CURATION_CACHE: Failed to get conversation ID:', error)
+    return null
   }
 }

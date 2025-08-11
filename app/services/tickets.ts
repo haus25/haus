@@ -3,14 +3,8 @@
 import { createPublicClient, createWalletClient, custom, parseEther, formatEther, http, type WalletClient } from 'viem'
 import { parseAbi, getContract } from 'viem'
 import { seiTestnet, waitForTransaction } from '../lib/sei'
-import EventFactoryABI from '../contracts/abis/EventFactoryABI.json'
+import { CONTRACT_ADDRESSES, EVENT_FACTORY_ABI } from '../lib/constants'
 import TicketKioskABI from '../contracts/abis/TicketKioskABI.json'
-
-// Contract addresses
-const CONTRACT_ADDRESSES = {
-  EventFactory: process.env.NEXT_PUBLIC_EVENT_FACTORY!,
-  TreasuryReceiver: process.env.TREASURY_RECEIVER!,
-} as const
 
 // Enhanced ABI for ticket operations
 const TICKET_KIOSK_ABI = parseAbi([
@@ -216,8 +210,8 @@ export class TicketService {
     
     try {
       const eventData = await this.getPublicClient().readContract({
-        address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
-        abi: EventFactoryABI.abi,
+        address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+        abi: EVENT_FACTORY_ABI,
         functionName: 'getEvent',
         args: [BigInt(eventId)]
       })
@@ -309,8 +303,8 @@ export class TicketService {
       console.log('TICKETS: Fetching all events from contract...')
       
       const totalEvents = await publicClient.readContract({
-        address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
-        abi: EventFactoryABI.abi,
+        address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+        abi: EVENT_FACTORY_ABI,
         functionName: 'totalEvents',
       }) as bigint
 
@@ -323,8 +317,8 @@ export class TicketService {
       for (let i = 0; i < Number(totalEvents); i++) {
         try {
           const eventData = await publicClient.readContract({
-            address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
-            abi: EventFactoryABI.abi,
+            address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+            abi: EVENT_FACTORY_ABI,
             functionName: 'getEvent',
             args: [BigInt(i)],
           }) as any
@@ -728,8 +722,8 @@ export class TicketService {
       console.log('TICKETS: Fetching tickets for user:', userAddress)
       
       const kioskData = await this.getPublicClient().readContract({
-        address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
-        abi: EventFactoryABI.abi,
+        address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+        abi: EVENT_FACTORY_ABI,
         functionName: 'getAllTicketKiosks',
       }) as [bigint[], string[]]
 

@@ -54,13 +54,14 @@ const EVENT_FACTORY_ABI = [
         "internalType": "struct IEventFactory.EventData",
         "components": [
           {"name": "creator", "type": "address", "internalType": "address"},
-          {"name": "startDate", "type": "uint256", "internalType": "uint256"},
-          {"name": "eventDuration", "type": "uint256", "internalType": "uint256"},
-          {"name": "reservePrice", "type": "uint256", "internalType": "uint256"},
-          {"name": "metadataURI", "type": "string", "internalType": "string"},
-          {"name": "artCategory", "type": "string", "internalType": "string"},
           {"name": "KioskAddress", "type": "address", "internalType": "address"},
-          {"name": "finalized", "type": "bool", "internalType": "bool"}
+          {"name": "curationAddress", "type": "address", "internalType": "address"},
+          {"name": "startDate", "type": "uint96", "internalType": "uint96"},
+          {"name": "eventDuration", "type": "uint96", "internalType": "uint96"},
+          {"name": "reservePrice", "type": "uint96", "internalType": "uint96"},
+          {"name": "finalized", "type": "bool", "internalType": "bool"},
+          {"name": "metadataURI", "type": "string", "internalType": "string"},
+          {"name": "artCategory", "type": "string", "internalType": "string"}
         ]
       }
     ],

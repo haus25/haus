@@ -9,6 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { Button } from "../../components/ui/button"
 import { Badge } from "../../components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "../../components/ui/avatar"
+import { Input } from "../../components/ui/input"
+import { Textarea } from "../../components/ui/textarea"
 import { 
   Calendar, 
   MapPin, 
@@ -26,7 +28,8 @@ import {
   ChevronDown,
   ChevronUp,
   MessageSquare,
-  Edit
+  Edit,
+  Send
 } from "lucide-react"
 import { toast } from "sonner"
 import { fetchOnChainEvents, type OnChainEventData, createTicketPurchaseService } from "../../services/tickets"
@@ -38,6 +41,10 @@ import {
   requestCurationPlan, 
   sendCurationMessage,
   hasCurationDeployed,
+  getCachedCurationPlan,
+  getCachedConversationId,
+  requestAspectRefinement,
+  acceptCurationProposal,
   type CurationResult
 } from "../../services/curation"
 
@@ -61,6 +68,18 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const [curationDeployed, setCurationDeployed] = useState(false)
   const [isDeployingCuration, setIsDeployingCuration] = useState(false)
   const [curationPlan, setCurationPlan] = useState<CurationResult | null>(null)
+  const [expandedDiscussion, setExpandedDiscussion] = useState<string | null>(null)
+  const [discussionMessages, setDiscussionMessages] = useState<Record<string, Array<{role: string, content: string}>>>({})
+  const [isDiscussing, setIsDiscussing] = useState(false)
+  const [isRequestingPlan, setIsRequestingPlan] = useState(false)
+  const [isAcceptingPlan, setIsAcceptingPlan] = useState(false)
+  const [selectedIterations, setSelectedIterations] = useState<Record<string, number>>({
+    banner: 0,
+    title: 0, 
+    description: 0,
+    schedule: 0,
+    pricing: 0
+  })
 
   useEffect(() => {
     const loadEventData = async () => {
@@ -93,6 +112,23 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
 
     loadEventData()
   }, [params.id])
+
+  // Load cached curation plan when user profile is available
+  useEffect(() => {
+    if (!userProfile?.address || !event) return
+    
+    console.log('CURATION_CACHE: Checking for cached plan...')
+    const cachedPlan = getCachedCurationPlan(params.id, userProfile.address)
+    if (cachedPlan) {
+      console.log('CURATION_CACHE: Found cached plan, restoring state')
+      setCurationPlan(cachedPlan)
+      
+      const conversationId = getCachedConversationId(params.id, userProfile.address)
+      if (conversationId) {
+        setCurationConversationId(conversationId)
+      }
+    }
+  }, [params.id, userProfile?.address, event])
 
   const handlePurchaseTicket = async () => {
     if (!isConnected || !userProfile || !event) {
@@ -232,8 +268,10 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       return
     }
 
+    setIsRequestingPlan(true)
+    
     try {
-      toast.loading("Requesting curation plan...")
+      toast.loading("🎨 Generating curation plan with AI agents...")
       
       const planResult = await requestCurationPlan(
         params.id,
@@ -266,11 +304,239 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       console.error("CURATION_REQUEST: Error:", error)
       toast.dismiss()
       toast.error(`Failed to request plan: ${error.message || 'Unknown error'}`)
+    } finally {
+      setIsRequestingPlan(false)
+    }
+  }
+
+  const handleAcceptPlan = async () => {
+    if (!curationPlan || !curationConversationId) {
+      toast.error("No curation plan to accept")
+      return
+    }
+
+    setIsAcceptingPlan(true)
+    
+    try {
+      toast.loading("🎉 Accepting plan and updating blockchain...")
+      
+      // Accept the curation proposal - this will trigger blockchain update
+      const result = await acceptCurationProposal(
+        curationConversationId,
+        curationPlan.curation
+      )
+      
+      toast.dismiss()
+      
+      if (result.success) {
+        toast.success(`✅ Plan accepted successfully!\n\n🔗 Tx: ${result.transactionHash?.slice(0, 8)}...\n📝 Metadata updated on-chain`)
+        
+        // Clear the plan from state and cache
+        setCurationPlan(null)
+        setCurationConversationId(null)
+        
+        // Refresh event data to show updated metadata
+        window.location.reload()
+      } else {
+        throw new Error(result.error || 'Failed to accept plan')
+      }
+      
+    } catch (error: any) {
+      console.error("ACCEPT_PLAN: Error:", error)
+      toast.dismiss()
+      toast.error(`Failed to accept plan: ${error.message || 'Unknown error'}`)
+    } finally {
+      setIsAcceptingPlan(false)
+    }
+  }
+
+  const handleDiscussion = async (aspect: string, message: string) => {
+    if (!curationConversationId) {
+      toast.error("No active curation session")
+      return
+    }
+
+    setIsDiscussing(true)
+    
+    try {
+      // Add user message to local state immediately
+      setDiscussionMessages(prev => ({
+        ...prev,
+        [aspect]: [
+          ...(prev[aspect] || []),
+          { role: 'user', content: message }
+        ]
+      }))
+
+      toast.loading(`Discussing ${aspect} refinement...`)
+      
+      const result = await requestAspectRefinement(
+        curationConversationId,
+        aspect,
+        message
+      )
+      
+      // Add agent response to local state
+      setDiscussionMessages(prev => ({
+        ...prev,
+        [aspect]: [
+          ...(prev[aspect] || []),
+          { role: 'assistant', content: result.message || 'Refinement completed' }
+        ]
+      }))
+
+      // Update the curation plan with the new result
+      if (curationPlan && result.result) {
+        const updatedPlan = { ...curationPlan }
+        if (updatedPlan.curation) {
+          // Type-safe update for known aspects
+          const curation = updatedPlan.curation as any
+          
+          // Store this as a new iteration for the aspect
+          if (!curation[`${aspect}_iterations`]) {
+            curation[`${aspect}_iterations`] = [curation[aspect]] // Store original as iteration 0
+          }
+          curation[`${aspect}_iterations`].push(result.result) // Add new iteration
+          
+          // Update the current aspect to the latest iteration
+          curation[aspect] = result.result
+          
+          // Update selected iteration to the latest one
+          setSelectedIterations(prev => ({
+            ...prev,
+            [aspect]: curation[`${aspect}_iterations`].length - 1
+          }))
+        }
+        setCurationPlan(updatedPlan)
+      }
+      
+      toast.dismiss()
+      toast.success(`✨ ${aspect} refined successfully!`)
+      
+    } catch (error: any) {
+      console.error(`DISCUSSION_${aspect.toUpperCase()}: Error:`, error)
+      toast.dismiss()
+      toast.error(`Failed to refine ${aspect}: ${error.message || 'Unknown error'}`)
+    } finally {
+      setIsDiscussing(false)
     }
   }
 
   const isCreator = isConnected && userProfile && event && event.creatorAddress.toLowerCase() === userProfile.address.toLowerCase()
   const canShowCuration = isCreator && event?.status === 'upcoming'
+
+  // Iteration Selector Component
+  const IterationSelector = ({ aspect, title }: { aspect: string, title: string }) => {
+    if (!curationPlan?.curation) return null
+    
+    const iterations = curationPlan.curation[`${aspect}_iterations`] || []
+    const selectedIteration = selectedIterations[aspect] || 0
+    
+    if (iterations.length <= 1) return null // Only show if there are multiple iterations
+    
+    return (
+      <div className="flex items-center space-x-2 mb-2">
+        <span className="text-sm text-gray-600">{title} Iterations:</span>
+        <div className="flex space-x-1">
+          {iterations.map((_: any, index: number) => (
+            <button
+              key={index}
+              onClick={() => {
+                // Update selected iteration
+                setSelectedIterations(prev => ({ ...prev, [aspect]: index }))
+                
+                // Update the curation plan to show this iteration
+                const updatedPlan = { ...curationPlan }
+                const curation = updatedPlan.curation as any
+                curation[aspect] = iterations[index]
+                setCurationPlan(updatedPlan)
+              }}
+              className={`px-2 py-1 text-xs rounded ${
+                index === selectedIteration 
+                  ? 'bg-red-600 text-white' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              #{index + 1}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // Discussion UI Component
+  const DiscussionBlock = ({ aspect, title }: { aspect: string, title: string }) => {
+    const [message, setMessage] = useState('')
+    const messages = discussionMessages[aspect] || []
+    const isExpanded = expandedDiscussion === aspect
+
+    if (!isExpanded) return null
+
+    return (
+      <div className="mt-4 p-4 border rounded-lg bg-gray-50 dark:bg-gray-900">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="font-medium text-sm">Discuss {title}</h4>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setExpandedDiscussion(null)}
+          >
+            <ChevronUp className="h-4 w-4" />
+          </Button>
+        </div>
+        
+        {/* Message History */}
+        {messages.length > 0 && (
+          <div className="mb-3 max-h-40 overflow-y-auto space-y-2">
+            {messages.map((msg, idx) => (
+              <div key={idx} className={`p-2 rounded text-sm ${
+                msg.role === 'user' 
+                  ? 'bg-blue-100 dark:bg-blue-900 ml-4' 
+                  : 'bg-green-100 dark:bg-green-900 mr-4'
+              }`}>
+                <div className="font-medium text-xs text-gray-600 dark:text-gray-400">
+                  {msg.role === 'user' ? 'You' : 'Agent'}
+                </div>
+                {msg.content}
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {/* Input Area */}
+        <div className="flex gap-2">
+          <Textarea
+            placeholder={`Provide feedback for ${title.toLowerCase()}...`}
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            className="flex-1 min-h-[60px]"
+            disabled={isDiscussing}
+          />
+          <Button
+            onClick={() => {
+              if (message.trim()) {
+                handleDiscussion(aspect, message.trim())
+                setMessage('')
+              }
+            }}
+            disabled={!message.trim() || isDiscussing}
+            size="sm"
+          >
+            {isDiscussing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+        
+        <p className="text-xs text-gray-500 mt-2">
+          {messages.length >= 4 ? 'Maximum iterations reached' : `${2 - Math.floor(messages.length / 2)} iterations remaining`}
+        </p>
+      </div>
+    )
+  }
 
   // Clear purchasing state when wallet disconnects
   useEffect(() => {
@@ -344,13 +610,16 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                         size="sm" 
                         variant="secondary" 
                         className="h-8 w-8 p-0"
-                        onClick={() => {/* TODO: Open banner edit dialog */}}
+                        onClick={() => setExpandedDiscussion(expandedDiscussion === 'banner' ? null : 'banner')}
+                        title="Discuss Banner"
                       >
-                        <Edit className="h-4 w-4" />
+                        <MessageSquare className="h-4 w-4" />
                       </Button>
                     </div>
                   )}
                 </div>
+                <IterationSelector aspect="banner" title="Banner" />
+                <DiscussionBlock aspect="banner" title="Banner" />
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
@@ -363,12 +632,15 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                             size="sm" 
                             variant="ghost" 
                             className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700"
-                            onClick={() => {/* TODO: Open title edit dialog */}}
+                            onClick={() => setExpandedDiscussion(expandedDiscussion === 'title' ? null : 'title')}
+                            title="Discuss Title"
                           >
-                            <Edit className="h-4 w-4" />
+                            <MessageSquare className="h-4 w-4" />
                           </Button>
                         )}
                       </div>
+                      <IterationSelector aspect="title" title="Title" />
+                      <DiscussionBlock aspect="title" title="Title" />
                       <div className="flex items-center space-x-4 text-muted-foreground">
                         <div className="flex items-center gap-1">
                           <Calendar className="h-4 w-4 mr-1" />
@@ -380,9 +652,10 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                               size="sm" 
                               variant="ghost" 
                               className="h-4 w-4 p-0 text-blue-600 hover:text-blue-700 ml-1"
-                              onClick={() => {/* TODO: Open schedule edit dialog */}}
+                              onClick={() => setExpandedDiscussion(expandedDiscussion === 'schedule' ? null : 'schedule')}
+                              title="Discuss Schedule"
                             >
-                              <Edit className="h-3 w-3" />
+                              <MessageSquare className="h-3 w-3" />
                             </Button>
                           )}
                         </div>
@@ -396,6 +669,8 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                           <Users className="h-4 w-4 mr-1" />
                           {event.participants}/{event.maxParticipants} attendees
                         </div>
+                        <IterationSelector aspect="schedule" title="Schedule" />
+                        <DiscussionBlock aspect="schedule" title="Schedule" />
                       </div>
                     </div>
                     <div className="flex space-x-2">
@@ -404,9 +679,17 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                         <Button
                           size="sm"
                           className="bg-green-600 hover:bg-green-700 text-white"
-                          onClick={() => {/* TODO: Accept curation plan */}}
+                          onClick={handleAcceptPlan}
+                          disabled={isAcceptingPlan}
                         >
-                          ✓ Accept Plan
+                          {isAcceptingPlan ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Accepting...
+                            </>
+                          ) : (
+                            "✓ Accept Plan"
+                          )}
                         </Button>
                       )}
                       <Button
@@ -444,15 +727,18 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                           size="sm" 
                           variant="ghost" 
                           className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700"
-                          onClick={() => {/* TODO: Open description edit dialog */}}
+                          onClick={() => setExpandedDiscussion(expandedDiscussion === 'description' ? null : 'description')}
+                          title="Discuss Description"
                         >
-                          <Edit className="h-3 w-3" />
+                          <MessageSquare className="h-3 w-3" />
                         </Button>
                       )}
                     </div>
                     <p className="text-muted-foreground leading-relaxed">
                       {curationPlan?.curation?.description?.description || event.description}
                     </p>
+                    <IterationSelector aspect="description" title="Description" />
+                    <DiscussionBlock aspect="description" title="Description" />
                   </div>
                 </div>
               </CardContent>
@@ -613,11 +899,21 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                 <CardContent>
                   <Button 
                     onClick={handleRequestPlan}
-                    className="w-full animate-pulse bg-red-600 hover:bg-red-700"
+                    className={`w-full bg-red-600 hover:bg-red-700 ${!isRequestingPlan ? 'animate-pulse' : ''}`}
                     size="lg"
+                    disabled={isRequestingPlan}
                   >
-                    <Palette className="h-4 w-4 mr-2" />
-                    Request Plan
+                    {isRequestingPlan ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Generating Plan...
+                      </>
+                    ) : (
+                      <>
+                        <Palette className="h-4 w-4 mr-2" />
+                        Request Plan
+                      </>
+                    )}
                   </Button>
                 </CardContent>
               </Card>
@@ -675,14 +971,17 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                         size="sm" 
                         variant="ghost" 
                         className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700"
-                        onClick={() => {/* TODO: Open pricing edit dialog */}}
+                        onClick={() => setExpandedDiscussion(expandedDiscussion === 'pricing' ? null : 'pricing')}
+                        title="Discuss Pricing"
                       >
-                        <Edit className="h-3 w-3" />
+                        <MessageSquare className="h-3 w-3" />
                       </Button>
                     )}
                   </div>
                   <p className="text-sm text-muted-foreground">per ticket</p>
                 </div>
+                <IterationSelector aspect="pricing" title="Pricing" />
+                <DiscussionBlock aspect="pricing" title="Pricing" />
 
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
@@ -762,4 +1061,4 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       </main>
     </div>
   )
-} 
+}

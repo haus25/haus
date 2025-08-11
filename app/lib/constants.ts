@@ -1,10 +1,10 @@
 // Contract addresses on Sei
 export const CONTRACT_ADDRESSES = {
-  EVENT_FACTORY: process.env.NEXT_PUBLIC_EVENT_FACTORY || "",
-  EVENT_STATION: process.env.NEXT_PUBLIC_EVENT_STATION || "",
-  TICKET_KIOSK: process.env.NEXT_PUBLIC_TICKET_KIOSK || "",
-  LIVE_TIPPING: process.env.NEXT_PUBLIC_LIVE_TIPPING || "",
-  DISTRIBUTOR: process.env.NEXT_PUBLIC_DISTRIBUTOR || "",
+  EVENT_FACTORY: process.env.NEXT_PUBLIC_EVENT_FACTORY,
+  EVENT_MANAGER: process.env.NEXT_PUBLIC_EVENT_MANAGER,
+  CREATION_WRAPPER: process.env.NEXT_PUBLIC_CREATION_WRAPPER,
+  LIVE_TIPPING: process.env.NEXT_PUBLIC_LIVE_TIPPING,
+  DISTRIBUTOR: process.env.NEXT_PUBLIC_DISTRIBUTOR,
 }
 
 // Sei Network configuration
@@ -81,7 +81,7 @@ export const IPFS_GATEWAY = process.env.NEXT_PUBLIC_IPFS_GATEWAY || "https://ipf
 export const HIDDEN_MESSAGE_1 = "cmVhbGl0eSAtIGlzIHlldCB0byBiZSBpbnZlbnRlZC4=" // "reality - is yet to be invented." in base64
 export const HIDDEN_MESSAGE_2 = "anVzdCBhbm90aGVyIHF1b3RlLg==" // "just another quote." in base64
 
-// EventFactory ABI - latest
+// EventFactory ABI
 export const EVENT_FACTORY_ABI = [
   {
     "type": "function",
@@ -94,14 +94,14 @@ export const EVENT_FACTORY_ABI = [
         "internalType": "struct IEventFactory.EventData",
         "components": [
           {"name": "creator", "type": "address", "internalType": "address"},
-          {"name": "startDate", "type": "uint256", "internalType": "uint256"},
-          {"name": "eventDuration", "type": "uint256", "internalType": "uint256"},
-          {"name": "reservePrice", "type": "uint256", "internalType": "uint256"},
-          {"name": "metadataURI", "type": "string", "internalType": "string"},
-          {"name": "artCategory", "type": "string", "internalType": "string"},
           {"name": "KioskAddress", "type": "address", "internalType": "address"},
           {"name": "curationAddress", "type": "address", "internalType": "address"},
-          {"name": "finalized", "type": "bool", "internalType": "bool"}
+          {"name": "startDate", "type": "uint96", "internalType": "uint96"},
+          {"name": "eventDuration", "type": "uint96", "internalType": "uint96"},
+          {"name": "reservePrice", "type": "uint96", "internalType": "uint96"},
+          {"name": "finalized", "type": "bool", "internalType": "bool"},
+          {"name": "metadataURI", "type": "string", "internalType": "string"},
+          {"name": "artCategory", "type": "string", "internalType": "string"}
         ]
       }
     ],
@@ -113,6 +113,34 @@ export const EVENT_FACTORY_ABI = [
     "inputs": [],
     "outputs": [{"name": "", "type": "uint256", "internalType": "uint256"}],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAllTicketKiosks",
+    "inputs": [],
+    "outputs": [
+      {"name": "eventIds", "type": "uint256[]", "internalType": "uint256[]"},
+      {"name": "kioskAddresses", "type": "address[]", "internalType": "address[]"}
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getCurationContract",
+    "inputs": [{"name": "eventId", "type": "uint256", "internalType": "uint256"}],
+    "outputs": [{"name": "", "type": "address", "internalType": "address"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "deployCurationForEvent",
+    "inputs": [
+      {"name": "eventId", "type": "uint256", "internalType": "uint256"},
+      {"name": "scope", "type": "uint256", "internalType": "uint256"},
+      {"name": "description", "type": "string", "internalType": "string"}
+    ],
+    "outputs": [{"name": "curationAddress", "type": "address", "internalType": "address"}],
+    "stateMutability": "nonpayable"
   }
 ] as const
 
