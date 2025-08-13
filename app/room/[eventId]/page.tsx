@@ -1,11 +1,11 @@
 import { redirect } from 'next/navigation'
 
-interface PageProps {
+interface RoomProps {
   params: { eventId: string }
   searchParams: { [key: string]: string | string[] | undefined }
 }
 
-export default function EventRoomPage({ params, searchParams }: PageProps) {
+export default function RoomID({ params, searchParams }: RoomProps) {
   // Build query string from search params
   const queryParams = new URLSearchParams()
   

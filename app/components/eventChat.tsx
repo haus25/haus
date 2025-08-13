@@ -7,7 +7,7 @@ import { Input } from "./ui/input"
 import { Button } from "./ui/button"
 import { MessageSquare, X, Send } from "lucide-react"
 
-interface ChatMessage {
+export interface ChatMessage {
   id: number
   user: string
   message: string
@@ -17,7 +17,7 @@ interface ChatMessage {
   tipAmount?: number
 }
 
-interface EventChatProps {
+export interface EventChatProps {
   messages: ChatMessage[]
   message: string
   onMessageChange: (message: string) => void
@@ -27,6 +27,7 @@ interface EventChatProps {
   isVisible?: boolean
   onToggleVisibility?: () => void
   className?: string
+  disabled?: boolean
 }
 
 export function EventChat({
@@ -39,6 +40,7 @@ export function EventChat({
   isVisible = true,
   onToggleVisibility,
   className = "",
+  disabled = false,
 }: EventChatProps) {
   const chatContainerRef = useRef<HTMLDivElement>(null)
 
@@ -51,7 +53,7 @@ export function EventChat({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (message.trim()) {
+    if (message.trim() && !disabled) {
       onSendMessage(e)
     }
   }
@@ -123,13 +125,14 @@ export function EventChat({
             <Input
               value={message}
               onChange={(e) => onMessageChange(e.target.value)}
-              placeholder="Type a message..."
+              placeholder={disabled ? "Connecting to chat..." : "Type a message..."}
               className="flex-1 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:border-primary"
+              disabled={disabled}
             />
             <Button
               type="submit"
               size="icon"
-              disabled={!message.trim()}
+              disabled={!message.trim() || disabled}
               className="bg-primary text-primary-foreground hover:bg-primary/90 border-primary"
             >
               <Send size={16} />
@@ -195,13 +198,14 @@ export function EventChat({
           <Input
             value={message}
             onChange={(e) => onMessageChange(e.target.value)}
-            placeholder="Type a message..."
+            placeholder={disabled ? "Connecting to chat..." : "Type a message..."}
             className="flex-1 bg-background border-border text-foreground focus:border-primary"
+            disabled={disabled}
           />
           <Button
             type="submit"
             size="icon"
-            disabled={!message.trim()}
+            disabled={!message.trim() || disabled}
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Send size={16} />

@@ -435,16 +435,16 @@ export class EventFactoryService {
         console.log('CONTRACT_CALL: Step 4 - Generating streaming URLs directly')
         
         const streamUrls = streamingService.generateStreamUrls(expectedEventId.toString())
-        const eventRoomUrl = streamingService.generateEventRoomUrl(expectedEventId.toString())
+        const roomUrl = streamingService.generateRoomUrl(expectedEventId.toString())
 
         console.log('CONTRACT_CALL: Stream URLs generated:', streamUrls)
-        console.log('CONTRACT_CALL: Event room accessible at:', eventRoomUrl)
+        console.log('CONTRACT_CALL: Event room accessible at:', roomUrl)
 
         // Summary of operations
         console.log('CONTRACT_CALL: 🎉 Event creation summary:')
         console.log('CONTRACT_CALL: - RTA NFT minted:', rtaNftMinted ? '✅' : '⚠️')
         console.log('CONTRACT_CALL: - TicketKiosk deployed:', ticketKioskDeployed ? '✅' : '⚠️')
-        console.log('CONTRACT_CALL: - Event room URL:', eventRoomUrl)
+        console.log('CONTRACT_CALL: - Event room URL:', roomUrl)
         console.log('CONTRACT_CALL: - Transaction hash:', txHash)
         console.log('CONTRACT_CALL: - Block number:', receipt.blockNumber.toString())
 

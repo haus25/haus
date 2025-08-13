@@ -1,212 +1,202 @@
-import { Server as WebSocketServer } from "ws"
-import { createServer } from "http"
-import { v4 as uuidv4 } from "uuid"
-import { verifyTicket } from "./event"
+import { xmtpChatService, type XMTPMessage } from "./xmtp"
+import { loadUserProfile } from "./profile"
 
-// Types
-interface ChatMessage {
-  id: string
-  type: "message" | "tip" | "system" | "auth" | "join" | "history"
-  eventId: string
-  sender: string
+// Types for chat messages - matches EventChat component interface
+export interface ChatMessage {
+  id: number
+  user: string
   message: string
-  timestamp: number
+  timestamp: string
+  isSystem?: boolean
   isTip?: boolean
   tipAmount?: number
 }
 
-interface ChatClient {
-  id: string
-  socket: WebSocket
+// Types for system events
+export interface SystemEvent {
+  type: "user_joined" | "tip_sent" | "reserve_hit" | "stream_started" | "stream_ended"
   eventId: string
-  publicKey: string | null
-  isAuthenticated: boolean
-}
-
-// Store messages in memory (in production, use a database)
-const messageHistory: Record<string, ChatMessage[]> = {}
-const clients: ChatClient[] = []
-
-/**
- * Starts the chat WebSocket server
- */
-export function startChatServer(port = 8080): void {
-  const server = createServer()
-  const wss = new WebSocketServer({ server })
-
-  wss.on("connection", (socket: WebSocket) => {
-    const clientId = uuidv4()
-
-    // Add client to list
-    const client: ChatClient = {
-      id: clientId,
-      socket,
-      eventId: "",
-      publicKey: null,
-      isAuthenticated: false,
-    }
-    clients.push(client)
-
-    // Handle messages
-    socket.addEventListener("message", async (event) => {
-      try {
-        const data = JSON.parse(event.data.toString())
-
-        // Handle different message types
-        switch (data.type) {
-          case "auth":
-            // Authenticate user
-            client.publicKey = data.publicKey
-            client.isAuthenticated = true
-            break
-
-          case "join":
-            // Join an event room
-            client.eventId = data.eventId
-
-            // Verify ticket if authenticated
-            if (client.isAuthenticated && client.publicKey) {
-              const hasTicket = await verifyTicket(data.eventId, client.publicKey)
-              if (!hasTicket) {
-                // Send error message
-                socket.send(
-                  JSON.stringify({
-                    type: "system",
-                    message: "You do not have a ticket for this event",
-                  }),
-                )
-
-                // Close connection
-                socket.close()
-                return
-              }
-            }
-
-            // Initialize message history for this event if it doesn't exist
-            if (!messageHistory[data.eventId]) {
-              messageHistory[data.eventId] = []
-            }
-
-            // Send message history to client
-            socket.send(
-              JSON.stringify({
-                type: "history",
-                messages: messageHistory[data.eventId],
-              }),
-            )
-            break
-
-          case "message":
-            // Validate message
-            if (!data.message || !data.eventId) {
-              socket.send(
-                JSON.stringify({
-                  type: "system",
-                  message: "Invalid message format",
-                }),
-              )
-              return
-            }
-
-            // Create message object
-            const message: ChatMessage = {
-              id: uuidv4(),
-              type: "message",
-              eventId: data.eventId,
-              sender: client.publicKey || "Guest",
-              message: data.message,
-              timestamp: Date.now(),
-            }
-
-            // Add to history
-            if (messageHistory[data.eventId]) {
-              messageHistory[data.eventId].push(message)
-
-              // Limit history size
-              if (messageHistory[data.eventId].length > 100) {
-                messageHistory[data.eventId].shift()
-              }
-            }
-
-            // Broadcast to all clients in the same event
-            broadcastToEvent(data.eventId, message)
-            break
-
-          case "tip":
-            // Create tip message
-            const tipMessage: ChatMessage = {
-              id: uuidv4(),
-              type: "tip",
-              eventId: data.eventId,
-              sender: client.publicKey || "Guest",
-              message: `Tipped ${data.amount} SOL!`,
-              timestamp: Date.now(),
-              isTip: true,
-              tipAmount: data.amount,
-            }
-
-            // Add to history
-            if (messageHistory[data.eventId]) {
-              messageHistory[data.eventId].push(tipMessage)
-            }
-
-            // Broadcast to all clients in the same event
-            broadcastToEvent(data.eventId, tipMessage)
-            break
-        }
-      } catch (error) {
-        console.error("Error handling message:", error)
-      }
-    })
-
-    // Handle disconnection
-    socket.addEventListener("close", () => {
-      // Remove client from list
-      const index = clients.findIndex((c) => c.id === clientId)
-      if (index !== -1) {
-        clients.splice(index, 1)
-      }
-    })
-  })
-
-  server.listen(port, () => {
-    console.log(`Chat server running on port ${port}`)
-  })
+  data: any
 }
 
 /**
- * Broadcasts a message to all clients in an event
+ * Enhanced Chat Service with XMTP Integration
+ * 
+ * This service combines XMTP for real wallet-based messaging with system messages
+ * for event activities (tips, joins, etc.). It does NOT handle user verification -
+ * that's already done by the room access control.
  */
-function broadcastToEvent(eventId: string, message: ChatMessage): void {
-  clients.forEach((client) => {
-    if (client.eventId === eventId && client.socket.readyState === WebSocket.OPEN) {
-      client.socket.send(JSON.stringify(message))
-    }
-  })
-}
+export class EventChatService {
+  private messageCallbacks = new Map<string, (message: ChatMessage) => void>()
+  private messageIdCounter = 1
 
-/**
- * Adds a tip message to the chat
- */
-export function addTipMessage(eventId: string, publicKey: string, amount: number): void {
-  const tipMessage: ChatMessage = {
-    id: uuidv4(),
-    type: "tip",
-    eventId,
-    sender: publicKey,
-    message: `Tipped ${amount} SOL!`,
-    timestamp: Date.now(),
-    isTip: true,
-    tipAmount: amount,
+  constructor() {
+    console.log('CHAT: Event chat service initialized with XMTP integration')
   }
 
-  // Add to history
-  if (messageHistory[eventId]) {
-    messageHistory[eventId].push(tipMessage)
-  } else {
-    messageHistory[eventId] = [tipMessage]
+  /**
+   * Initialize chat for an event room
+   * @param eventId - The event ID
+   * @param walletClient - User's wallet client (from wagmi)
+   * @param userAddress - User's wallet address
+   * @param participantAddresses - List of all participants (creator + ticket holders)
+   * @param onMessage - Callback for new messages
+   */
+  async initializeEventChat(
+    eventId: string,
+    walletClient: any,
+    userAddress: string,
+    participantAddresses: string[],
+    onMessage: (message: ChatMessage) => void
+  ): Promise<ChatMessage[]> {
+    console.log('CHAT: Initializing event chat for event:', eventId)
+    console.log('CHAT: Participants:', participantAddresses.length)
+    
+    try {
+      // Store message callback
+      this.messageCallbacks.set(eventId, onMessage)
+      
+      // Initialize XMTP client
+      await xmtpChatService.initializeClient(walletClient, userAddress)
+      
+      // Set up message callback
+      xmtpChatService.setMessageCallback((xmtpMessage: XMTPMessage) => {
+        const chatMessage = this.formatXMTPMessage(xmtpMessage)
+        this.handleNewMessage(eventId, chatMessage)
+      })
+      
+      // Get or create conversation for this event
+      await xmtpChatService.getEventConversation(eventId, participantAddresses)
+      
+      // Load message history
+      const history = await xmtpChatService.loadMessageHistory()
+      const formattedHistory = history.map(msg => this.formatXMTPMessage(msg))
+      
+      console.log('CHAT: Event chat initialized successfully with', formattedHistory.length, 'historical messages')
+      return formattedHistory
+      
+    } catch (error) {
+      console.error('CHAT: Error initializing event chat:', error)
+      throw error
+    }
   }
 
-  // Broadcast to all clients in the event
-  broadcastToEvent(eventId, tipMessage)
+  /**
+   * Send a message via XMTP
+   */
+  async sendMessage(content: string): Promise<void> {
+    try {
+      await xmtpChatService.sendMessage(content)
+    } catch (error) {
+      console.error('CHAT: Error sending message:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Add a system message (not sent via XMTP)
+   */
+  addSystemMessage(eventId: string, message: string, type?: "tip" | "join" | "reserve"): void {
+    const systemMessage: ChatMessage = {
+      id: this.messageIdCounter++,
+      user: "System",
+      message,
+      timestamp: new Date().toISOString(),
+      isSystem: true,
+      isTip: type === "tip"
+    }
+    
+    this.handleNewMessage(eventId, systemMessage)
+  }
+
+  /**
+   * Add system message for user joining
+   */
+  addUserJoinedMessage(eventId: string, userAddress: string): void {
+    this.loadUserDisplayName(userAddress).then(displayName => {
+      this.addSystemMessage(eventId, `${displayName} joined the room`, "join")
+    })
+  }
+
+  /**
+   * Add system message for tip
+   */
+  addTipMessage(eventId: string, userAddress: string, amount: number): void {
+    this.loadUserDisplayName(userAddress).then(displayName => {
+      this.addSystemMessage(eventId, `${displayName} tipped ${amount} SEI`, "tip")
+    })
+  }
+
+  /**
+   * Add system message for reserve price hit
+   */
+  addReservePriceHitMessage(eventId: string): void {
+    this.addSystemMessage(eventId, "🎉 Reserve price reached! Event is now live!", "reserve")
+  }
+
+  /**
+   * Format XMTP message to chat message
+   */
+  private formatXMTPMessage(xmtpMessage: XMTPMessage): ChatMessage {
+    return {
+      id: this.messageIdCounter++,
+      user: xmtpMessage.sender,
+      message: xmtpMessage.content,
+      timestamp: new Date(xmtpMessage.timestamp).toISOString(),
+      isSystem: false,
+      isTip: false
+    }
+  }
+
+  /**
+   * Handle new message and call callback
+   */
+  private handleNewMessage(eventId: string, message: ChatMessage): void {
+    const callback = this.messageCallbacks.get(eventId)
+    if (callback) {
+      callback(message)
+    }
+  }
+
+  /**
+   * Load user display name from profile or use wallet address
+   */
+  private async loadUserDisplayName(address: string): Promise<string> {
+    try {
+      const profile = await loadUserProfile(address)
+      if (profile) {
+        return profile.displayName || profile.name
+      }
+    } catch (error) {
+      console.warn('CHAT: Could not load profile for:', address)
+    }
+    
+    // Fallback to shortened wallet address
+    return `${address.slice(0, 6)}...${address.slice(-4)}`
+  }
+
+  /**
+   * Disconnect from event chat
+   */
+  async disconnect(eventId: string): Promise<void> {
+    console.log('CHAT: Disconnecting from event chat:', eventId)
+    
+    this.messageCallbacks.delete(eventId)
+    await xmtpChatService.disconnect()
+  }
+
+  /**
+   * Check if XMTP is ready
+   */
+  isReady(): boolean {
+    return xmtpChatService.isReady()
+  }
+}
+
+// Export singleton instance
+export const eventChatService = new EventChatService()
+
+// Legacy functions for system messages (used by tipping service)
+export function addTipMessage(eventId: string, userAddress: string, amount: number): void {
+  eventChatService.addTipMessage(eventId, userAddress, amount)
 }

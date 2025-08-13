@@ -309,7 +309,7 @@ export async function requestCurationPlan(
       return cachedPlan
     }
 
-    const response = await fetch(`${CURATION_API_BASE}/request-plan`, {
+    const response = await fetch(`${CURATION_API_BASE}/plan`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -416,7 +416,7 @@ export async function requestAspectRefinement(
   feedback: string
 ): Promise<any> {
   try {
-    const response = await fetch(`${CURATION_API_BASE}/refine-aspect`, {
+    const response = await fetch(`${CURATION_API_BASE}/iterate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -494,7 +494,7 @@ export async function acceptCurationProposal(
   finalCuration: any
 ): Promise<any> {
   try {
-    const response = await fetch(`${CURATION_API_BASE}/accept-proposal`, {
+    const response = await fetch(`${CURATION_API_BASE}/accept`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

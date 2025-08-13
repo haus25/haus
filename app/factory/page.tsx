@@ -542,12 +542,6 @@ export default function EventFactory() {
                       <span className="ml-2">SEI</span>
                     </div>
                   </div>
-
-                  <div className="flex items-center p-2 bg-muted/30 rounded-md">
-                    <span className="text-sm text-muted-foreground">
-                      Default price: {formData.duration / 5} SEI (based on duration)
-                    </span>
-                  </div>
                 </div>
               </div>
 
@@ -844,39 +838,41 @@ export default function EventFactory() {
           </p>
         </div>
 
-        <div className="flex mb-12">
-          {/* Progress Sidebar */}
-          <div className="mr-8 relative">
-            <div className="absolute top-0 bottom-0 left-6 w-0.5 bg-muted"></div>
+        <div className="flex gap-12">
+          {/* Progress Sidebar - Sticky and viewport-contained */}
+          <div className="relative">
+            <div className="sticky top-20 h-[calc(100vh-10rem)] flex flex-col">
+              <div className="absolute top-6 bottom-6 left-6 w-0.5 bg-foreground"></div>
 
-            {[
-              { id: "details", label: "Your Event" },
-              { id: "category", label: "Labels" },
-              { id: "format", label: "Event Format" },
-              { id: "sales", label: "Sales & Tickets" },
-              { id: "mint", label: "Mint Your Event" },
-            ].map((s, i) => (
-              <div key={s.id} className="flex items-center mb-16 relative z-10">
-                <div
-                  className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                    step === s.id
-                      ? "bg-primary text-white"
-                      : i < ["details", "category", "format", "sales", "mint"].indexOf(step)
-                        ? "bg-primary/20 text-primary"
-                        : "bg-muted text-muted-foreground"
-                  }`}
-                >
-                  {i + 1}
+              {[
+                { id: "details", label: "Your Event" },
+                { id: "category", label: "Labels" },
+                { id: "format", label: "Event Format" },
+                { id: "sales", label: "Sales & Tickets" },
+                { id: "mint", label: "Mint Your Event" },
+              ].map((s, i) => (
+                <div key={s.id} className="flex items-center flex-1 relative z-10 max-h-24">
+                  <div
+                    className={`w-12 h-12 rounded-full flex items-center justify-center font-semibold transition-colors ${
+                      step === s.id
+                        ? "bg-primary text-primary-foreground shadow-lg"
+                        : i < ["details", "category", "format", "sales", "mint"].indexOf(step)
+                          ? "bg-primary text-primary-foreground border-2 border-primary"
+                          : "bg-background text-muted-foreground border border-border"
+                    }`}
+                  >
+                    {i < ["details", "category", "format", "sales", "mint"].indexOf(step) ? "✓" : i + 1}
+                  </div>
+                  <span className={`ml-4 whitespace-nowrap ${step === s.id ? "text-foreground font-semibold" : "text-muted-foreground"}`}>
+                    {s.label}
+                  </span>
                 </div>
-                <span className={`ml-4 ${step === s.id ? "text-primary font-medium" : "text-muted-foreground"}`}>
-                  {s.label}
-                </span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
 
-          {/* Form Content */}
-          <div className="flex-1">{renderStepContent()}</div>
+          {/* Form Content - Can scroll independently */}
+          <div className="flex-1 min-h-0">{renderStepContent()}</div>
         </div>
 
         <div className="flex justify-between">

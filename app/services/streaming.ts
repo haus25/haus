@@ -47,7 +47,7 @@ class StreamingService {
   /**
    * Generate event room URL directly
    */
-  generateEventRoomUrl(eventId: string): string {
+  generateRoomUrl(eventId: string): string {
     if (typeof window !== 'undefined') {
       const isProductionDomain = window.location.hostname.includes('haus25.live');
       if (isProductionDomain) {
@@ -68,17 +68,17 @@ class StreamingService {
   async reserveStreamUrl(eventId: string, startTime: string, duration: number): Promise<{
     success: boolean;
     streamUrls: StreamSession;
-    eventRoomUrl: string;
+    roomUrl: string;
   }> {
     console.log('STREAMING: Generating stream URLs directly for event', eventId);
     
     const streamUrls = this.generateStreamUrls(eventId);
-    const roomUrl = this.generateEventRoomUrl(eventId);
+    const roomUrl = this.generateRoomUrl(eventId);
     
     return {
       success: true,
       streamUrls,
-      eventRoomUrl: roomUrl
+      roomUrl: roomUrl
     };
   }
 
@@ -175,7 +175,7 @@ class StreamingService {
    */
   async getStreamInfo(eventId: string): Promise<{
     streamUrls: StreamSession;
-    eventRoomUrl: string;
+    roomUrl: string;
     isLive: boolean;
     available: boolean;
   }> {
@@ -186,7 +186,7 @@ class StreamingService {
     
     return {
       streamUrls,
-      eventRoomUrl: this.generateEventRoomUrl(eventId),
+      roomUrl: this.generateRoomUrl(eventId),
       isLive: status.isLive,
       available: status.available
     };

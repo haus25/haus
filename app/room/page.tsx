@@ -40,6 +40,7 @@ import {
 import { toast } from "sonner"
 import { createTicketService } from "../services/tickets"
 import { sendTip, getEventTippingData } from "../services/tipping"
+import { eventChatService, type ChatMessage } from "../services/chat"
 
 export default function EventRoom() {
   const { userProfile, isConnected } = useAuth()
@@ -67,8 +68,10 @@ export default function EventRoom() {
     viewerCount: 0,
     hasAccess: false
   })
-  const [chatMessages, setChatMessages] = useState<any[]>([])
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatMessage, setChatMessage] = useState("")
+  const [isChatInitialized, setIsChatInitialized] = useState(false)
+  const [participantAddresses, setParticipantAddresses] = useState<string[]>([])
   const [tipAmount, setTipAmount] = useState("")
   const [customTipAmount, setCustomTipAmount] = useState("")
   const [showCustomTip, setShowCustomTip] = useState(false)
@@ -128,6 +131,9 @@ export default function EventRoom() {
         const eventDetails = await ticketService.getEventDetails(Number(eventId))
         const userIsCreator = eventDetails.creator.toLowerCase() === userProfile.address.toLowerCase()
         
+        // Get all participants (creator + ticket holders) for chat
+        const participants = [eventDetails.creator.toLowerCase()]
+        
         if (userIsCreator) {
           // User is the creator
           setIsCreator(true)
@@ -144,12 +150,16 @@ export default function EventRoom() {
           
           if (userHasTicket) {
             setStreamStatus(prev => ({ ...prev, hasAccess: true }))
+            participants.push(userProfile.address.toLowerCase())
           } else {
             // No ticket - show message and let user decide to buy ticket
             setStreamStatus(prev => ({ ...prev, hasAccess: false }))
             console.log('EVENT_ROOM: User does not have a ticket for this event')
           }
         }
+        
+        // Store participants for chat initialization
+        setParticipantAddresses(participants)
 
       } catch (error) {
         console.error('EVENT_ROOM: Error verifying user access:', error)
@@ -159,6 +169,59 @@ export default function EventRoom() {
 
     verifyUserAccess()
   }, [eventId, userProfile, walletClient, isConnected, router])
+
+  // Initialize XMTP chat when user has access
+  useEffect(() => {
+    const initializeChat = async () => {
+      if (!eventId || !userProfile?.address || !walletClient || !streamStatus.hasAccess || participantAddresses.length === 0) {
+        return
+      }
+
+      if (isChatInitialized) {
+        return // Already initialized
+      }
+
+      try {
+        console.log('ROOM: Initializing XMTP chat for event:', eventId)
+        
+        // Initialize chat with XMTP
+        const history = await eventChatService.initializeEventChat(
+          eventId,
+          walletClient,
+          userProfile.address,
+          participantAddresses,
+          (newMessage: ChatMessage) => {
+            setChatMessages(prev => [...prev, newMessage])
+          }
+        )
+        
+        // Load message history
+        setChatMessages(history)
+        setIsChatInitialized(true)
+        
+        // Add system message for user joining
+        eventChatService.addUserJoinedMessage(eventId, userProfile.address)
+        
+        console.log('ROOM: Chat initialized successfully with', history.length, 'messages')
+        
+      } catch (error) {
+        console.error('ROOM: Error initializing chat:', error)
+        // Don't show error to user, chat is secondary functionality
+        console.warn('ROOM: Chat will be disabled for this session')
+      }
+    }
+
+    initializeChat()
+  }, [eventId, userProfile, walletClient, streamStatus.hasAccess, participantAddresses, isChatInitialized])
+
+  // Cleanup chat on unmount
+  useEffect(() => {
+    return () => {
+      if (eventId && isChatInitialized) {
+        eventChatService.disconnect(eventId)
+      }
+    }
+  }, [eventId, isChatInitialized])
 
   // Load tipping data
   useEffect(() => {
@@ -322,19 +385,16 @@ export default function EventRoom() {
   }, [])
 
   // Handle chat message sending
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (chatMessage.trim() && userProfile) {
-      const newMessage = {
-          id: chatMessages.length + 1,
-        user: userProfile.displayName || userProfile.name || "Anonymous",
-          message: chatMessage,
-          timestamp: new Date().toISOString(),
-        avatar: userProfile.avatar
+    if (chatMessage.trim() && isChatInitialized) {
+      try {
+        await eventChatService.sendMessage(chatMessage)
+        setChatMessage("")
+      } catch (error) {
+        console.error('ROOM: Error sending message:', error)
+        toast.error('Failed to send message')
       }
-
-      setChatMessages(prev => [...prev, newMessage])
-      setChatMessage("")
     }
   }
 
@@ -366,6 +426,11 @@ export default function EventRoom() {
       console.log('ROOM: Tip transaction hash:', hash)
       toast.success(`Tip of ${amount} SEI sent successfully!`)
       
+      // Add tip message to chat
+      if (isChatInitialized && userProfile?.address) {
+        eventChatService.addTipMessage(eventId!, userProfile.address, amount)
+      }
+      
       // Refresh tipping data after successful tip
       setTimeout(async () => {
         try {
@@ -374,7 +439,13 @@ export default function EventRoom() {
           
           if (eventData?.reservePrice) {
             const progress = (parseFloat(tippingData.totalTips) / parseFloat(eventData.reservePrice)) * 100
-            setReserveProgress(Math.min(progress, 100))
+            const newProgress = Math.min(progress, 100)
+            setReserveProgress(newProgress)
+            
+            // Check if reserve price was just hit
+            if (newProgress >= 100 && reserveProgress < 100 && isChatInitialized) {
+              eventChatService.addReservePriceHitMessage(eventId!)
+            }
           }
         } catch (refreshError) {
           console.error('ROOM: Error refreshing tipping data:', refreshError)
@@ -787,6 +858,12 @@ export default function EventRoom() {
                   <CardTitle className="text-sm font-medium flex items-center gap-2 text-card-foreground">
                     <MessageSquare className="h-4 w-4" />
                     Live Chat
+                    {isChatInitialized && (
+                      <Badge variant="secondary" className="text-xs">XMTP</Badge>
+                    )}
+                    {!isChatInitialized && streamStatus.hasAccess && (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    )}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -796,6 +873,7 @@ export default function EventRoom() {
                     onMessageChange={setChatMessage}
                     onSendMessage={handleSendMessage}
                     height="400px"
+                    disabled={!isChatInitialized}
                   />
                 </CardContent>
               </Card>
@@ -861,6 +939,7 @@ export default function EventRoom() {
                   onSendMessage={handleSendMessage}
                   isOverlay={true}
                   height="calc(100% - 64px)"
+                  disabled={!isChatInitialized}
                 />
               </CardContent>
             </Card>
