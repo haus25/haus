@@ -24,7 +24,7 @@ type Category =
   | "standup-comedy"
   | "performance-art"
   | "poetry-slam"
-  | "open-mic"
+  | "improv"
   | "live-streaming"
   | "creative-workshop"
 
@@ -389,7 +389,7 @@ export default function TicketKiosk() {
                     { id: "standup-comedy", label: "Standup Comedy" },
                     { id: "performance-art", label: "Performance Art" },
                     { id: "poetry-slam", label: "Poetry Slam" },
-                    { id: "open-mic", label: "Open Mic" },
+                    { id: "improv", label: "Improv" },
                     { id: "live-streaming", label: "Live Streaming" },
                     { id: "creative-workshop", label: "Creative Workshop" },
                   ].map((category) => (

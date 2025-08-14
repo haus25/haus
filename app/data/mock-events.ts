@@ -33,7 +33,7 @@ export const mockEvents = [
   },
   {
     id: 3,
-    title: "Comedy Open Mic Night",
+    title: "Comedy Improv Night",
     creator: "laughfactory.eth",
     category: "standup-comedy",
     date: "2025-05-05T19:30:00",
@@ -145,12 +145,12 @@ export const mockEvents = [
       "https://assets.mixkit.co/videos/preview/mixkit-young-woman-vlogging-about-her-new-apartment-32299-large.mp4",
   },
 
-  // Open Mic/Improv
+  // Improv
   {
     id: 10,
     title: "Improv Theater Workshop",
     creator: "theater.eth",
-    category: "open-mic",
+    category: "improv",
     date: "2025-04-22T19:00:00",
     duration: 120,
     participants: 15,
@@ -163,9 +163,9 @@ export const mockEvents = [
   },
   {
     id: 11,
-    title: "Musical Open Mic Night",
+    title: "Musical Improv Night",
     creator: "musiccollective.eth",
-    category: "open-mic",
+    category: "improv",
     date: "2025-05-08T20:00:00",
     duration: 180,
     participants: 25,
@@ -180,7 +180,7 @@ export const mockEvents = [
     id: 12,
     title: "Storytelling Circle",
     creator: "storyteller.eth",
-    category: "open-mic",
+    category: "improv",
     date: "2025-05-15T18:30:00",
     duration: 120,
     participants: 20,

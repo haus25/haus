@@ -42,6 +42,7 @@ export interface CurationResult {
   proxyAddress: string
   curationAddress?: string
   generatedAt: string
+  status?: string // Status of the curation (pending, plan_ready, accepted)
 }
 
 // EventFactory ABI for curation deployment
@@ -303,10 +304,11 @@ export async function requestCurationPlan(
 ): Promise<CurationResult> {
   try {
     // First check if we already have a cached plan
-    const cachedPlan = getCachedCurationPlan(eventId, userAddress)
+    const cachedPlan = await getCachedCurationPlan(eventId, userAddress)
     if (cachedPlan) {
       console.log('CURATION_SERVICE: Using cached plan for event', eventId)
-      return cachedPlan
+      // Ensure return type is always CurationResult, never null
+      return cachedPlan as CurationResult
     }
 
     const response = await fetch(`${CURATION_API_BASE}/plan`, {
@@ -337,7 +339,8 @@ export async function requestCurationPlan(
       curation: planData,
       proxyAddress: planData.proxyAddress || '',
       curationAddress: result.curationAddress,
-      generatedAt: planData.generatedAt || new Date().toISOString()
+      generatedAt: planData.generatedAt || new Date().toISOString(),
+      status: result.status || 'plan_ready'
     }
 
     // Cache the plan result for persistence
@@ -565,31 +568,65 @@ export function setCachedCurationPlan(
 
 /**
  * Get cached curation plan if valid and belongs to current user
+ * Also tries to fetch from backend if not in cache
  */
-export function getCachedCurationPlan(eventId: string, userAddress: string): CurationResult | null {
+export async function getCachedCurationPlan(eventId: string, userAddress: string): Promise<CurationResult | null> {
   try {
+    // First check localStorage cache
     const cacheKey = `curation_plan_${eventId}`
     const cached = localStorage.getItem(cacheKey)
     
-    if (!cached) return null
-    
-    const cacheData: CachedCurationPlan = JSON.parse(cached)
-    
-    // Check if cache belongs to current user
-    if (cacheData.userAddress !== userAddress.toLowerCase()) {
-      clearCachedCurationPlan(eventId)
-      return null
+    if (cached) {
+      const cacheData: CachedCurationPlan = JSON.parse(cached)
+      
+      // Check if cache belongs to current user
+      if (cacheData.userAddress !== userAddress.toLowerCase()) {
+        clearCachedCurationPlan(eventId)
+      } else {
+        // Check if cache is still valid (24 hours)
+        const maxAge = 24 * 60 * 60 * 1000 // 24 hours in ms
+        if (Date.now() - cacheData.timestamp <= maxAge) {
+          console.log('CURATION_CACHE: Using cached plan for event', eventId)
+          return cacheData.plan
+        } else {
+          clearCachedCurationPlan(eventId)
+        }
+      }
     }
     
-    // Check if cache is still valid (24 hours)
-    const maxAge = 24 * 60 * 60 * 1000 // 24 hours in ms
-    if (Date.now() - cacheData.timestamp > maxAge) {
-      clearCachedCurationPlan(eventId)
-      return null
+    // If no valid cache, try to fetch from backend
+    console.log('CURATION_CACHE: No valid cache, checking backend for conversation...')
+    try {
+      const response = await fetch(`${CURATION_API_BASE}/conversation/${eventId}/${userAddress}`)
+      
+      if (response.ok) {
+        const result = await response.json()
+        
+        if (result.success && result.plan) {
+          console.log('CURATION_CACHE: Found backend conversation, restoring plan')
+          
+          const curationResult: CurationResult = {
+            success: true,
+            eventId,
+            metadataURI: result.plan.metadataURI,
+            curation: result.plan,
+            proxyAddress: result.plan.proxyAddress || '',
+            curationAddress: result.plan.curationAddress,
+            generatedAt: result.plan.generatedAt || new Date().toISOString(),
+            status: result.status || 'plan_ready'
+          }
+          
+          // Cache the restored plan
+          setCachedCurationPlan(eventId, userAddress, curationResult, result.conversationId)
+          
+          return curationResult
+        }
+      }
+    } catch (fetchError) {
+      console.log('CURATION_CACHE: Backend fetch failed (normal if no conversation exists):', fetchError)
     }
     
-    console.log('CURATION_CACHE: Using cached plan for event', eventId)
-    return cacheData.plan
+    return null
   } catch (error) {
     console.error('CURATION_CACHE: Failed to get cached plan:', error)
     clearCachedCurationPlan(eventId)
@@ -639,6 +676,35 @@ export function getCachedConversationId(eventId: string, userAddress: string): s
     return cacheData.conversationId
   } catch (error) {
     console.error('CURATION_CACHE: Failed to get conversation ID:', error)
+    return null
+  }
+}
+
+/**
+ * Get conversation details including iterations for persistence
+ */
+export async function getConversationDetails(eventId: string, userAddress: string): Promise<any> {
+  try {
+    const response = await fetch(`${CURATION_API_BASE}/conversation/${eventId}/${userAddress}`)
+    
+    if (response.ok) {
+      const result = await response.json()
+      
+      if (result.success) {
+        console.log('CURATION_SERVICE: Retrieved conversation details:', result.conversationId)
+        return {
+          conversationId: result.conversationId,
+          plan: result.plan,
+          iterations: result.iterations,
+          status: result.status,
+          eventData: result.eventData
+        }
+      }
+    }
+    
+    return null
+  } catch (error) {
+    console.error('CURATION_SERVICE: Failed to get conversation details:', error)
     return null
   }
 }

@@ -18,7 +18,7 @@ const RELIABLE_VIDEOS = {
   "performance-art":
     "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/1817-360-4J7GucopM3hE57hZjSwWqko3n5ULym.mp4",
   "poetry-slam": "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/2955-360-xLAcPRAAEvhA4gJV8bHULqhHaftej1.mp4",
-  "open-mic": "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/29983-360-yI0kgZpZ7Bj7QUbZQGPxKmmKefwLav.mp4",
+  "improv": "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/29983-360-yI0kgZpZ7Bj7QUbZQGPxKmmKefwLav.mp4",
   "live-streaming": "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/443-360-kRKFI1NVe7SieGyQKFPiKQin2dY8LV.mp4",
   "creative-workshop":
     "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/40367-360-LovhxrX7kcdSINyPAu7xLgWlCNmTBJ.mp4",
@@ -32,7 +32,7 @@ type Category =
   | "standup-comedy"
   | "performance-art"
   | "poetry-slam"
-  | "open-mic"
+  | "improv"
   | "live-streaming"
   | "creative-workshop"
 
@@ -41,7 +41,7 @@ const CATEGORY_DESTINATIONS = {
   "standup-comedy": "/kiosk?category=standup-comedy",
   "performance-art": "/kiosk?category=performance-art",
   "poetry-slam": "/kiosk?category=poetry-slam",
-  "open-mic": "/kiosk?category=open-mic",
+  "improv": "/kiosk?category=improv",
   "live-streaming": "/kiosk?category=live-streaming",
   "creative-workshop": "/kiosk?category=creative-workshop",
 }
@@ -145,8 +145,8 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
           "Performance Art: Breaking Boundaries",
           "Experimental Movement Workshop",
         ],
-        "poetry-slam": ["Urban Verses: Poetry Slam", "Spoken Word Revolution", "Poetic Justice: Open Mic Night"],
-        "open-mic": ["Open Mic: Discover New Talent", "Acoustic Sessions Live", "Improv Night: Unscripted"],
+        "poetry-slam": ["Urban Verses: Poetry Slam", "Spoken Word Revolution", "Poetic Justice: Improv Night"],
+        "improv": ["Improv: Discover New Talent", "Acoustic Sessions Live", "Improv Night: Unscripted"],
         "live-streaming": [
           "Live Streaming: Abstract Landscapes",
           "Artist at Work: Studio Session",
@@ -321,8 +321,8 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
           "Performance Art: Breaking Boundaries",
           "Experimental Movement Workshop",
         ],
-        "poetry-slam": ["Urban Verses: Poetry Slam", "Spoken Word Revolution", "Poetic Justice: Open Mic Night"],
-        "open-mic": ["Open Mic: Discover New Talent", "Acoustic Sessions Live", "Improv Night: Unscripted"],
+        "poetry-slam": ["Urban Verses: Poetry Slam", "Spoken Word Revolution", "Poetic Justice: Improv Night"],
+        "improv": ["Improv: Discover New Talent", "Acoustic Sessions Live", "Improv Night: Unscripted"],
         "live-streaming": [
           "Live Streaming: Abstract Landscapes",
           "Artist at Work: Studio Session",
@@ -604,16 +604,16 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
               <span className="sr-only">Poetry</span>
             </TabsTrigger>
             <TabsTrigger
-              value="open-mic"
-              onClick={() => setSelectedCategory("open-mic")}
+              value="improv"
+              onClick={() => setSelectedCategory("improv")}
               className="data-[state=active]:bg-primary/10 py-2 px-1 sm:px-2 flex justify-center items-center h-12"
             >
               <ArtCategoryIcon
-                category="open-mic"
+                category="improv"
                 size="sm"
-                className={selectedCategory === "open-mic" ? "text-primary" : "text-muted-foreground"}
+                className={selectedCategory === "improv" ? "text-primary" : "text-muted-foreground"}
               />
-              <span className="sr-only">Open Mic</span>
+              <span className="sr-only">Improv</span>
             </TabsTrigger>
             <TabsTrigger
               value="live-streaming"

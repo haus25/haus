@@ -333,7 +333,7 @@ export default function Home() {
                 { name: "standup comedy", icon: "standup-comedy" },
                 { name: "performance art", icon: "performance-art" },
                 { name: "poetry slam", icon: "poetry-slam" },
-                { name: "open mic / improv", icon: "open-mic" },
+                { name: "improv", icon: "improv" },
                 { name: "live streaming", icon: "live-streaming" },
                 { name: "creative workshop", icon: "creative-workshop" },
               ].map((category, index) => (

@@ -459,7 +459,7 @@ function LoginModal({ isOpen, onClose, redirectPath }: LoginModalProps) {
                     "standup-comedy",
                     "performance-art",
                     "poetry-slam",
-                    "open-mic",
+                    "improv",
                     "live-streaming",
                     "creative-workshop",
                   ].map((category) => (

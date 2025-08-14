@@ -43,6 +43,7 @@ import {
   hasCurationDeployed,
   getCachedCurationPlan,
   getCachedConversationId,
+  getConversationDetails,
   requestAspectRefinement,
   acceptCurationProposal,
   type CurationResult
@@ -117,17 +118,32 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   useEffect(() => {
     if (!userProfile?.address || !event) return
     
-    console.log('CURATION_CACHE: Checking for cached plan...')
-    const cachedPlan = getCachedCurationPlan(params.id, userProfile.address)
-    if (cachedPlan) {
-      console.log('CURATION_CACHE: Found cached plan, restoring state')
-      setCurationPlan(cachedPlan)
-      
-      const conversationId = getCachedConversationId(params.id, userProfile.address)
-      if (conversationId) {
-        setCurationConversationId(conversationId)
+    const loadCachedPlan = async () => {
+      console.log('CURATION_CACHE: Checking for cached plan...')
+      const cachedPlan = await getCachedCurationPlan(params.id, userProfile.address)
+      if (cachedPlan) {
+        console.log('CURATION_CACHE: Found cached plan, restoring state')
+        setCurationPlan(cachedPlan)
+        
+        const conversationId = getCachedConversationId(params.id, userProfile.address)
+        if (conversationId) {
+          setCurationConversationId(conversationId)
+          
+          // Also try to restore detailed conversation data including iterations
+          const conversationDetails = await getConversationDetails(params.id, userProfile.address)
+          if (conversationDetails?.iterations) {
+            console.log('CURATION_CACHE: Restoring iteration counts:', conversationDetails.iterations)
+            // Store iterations in local state for UI display
+            setSelectedIterations(prev => ({
+              ...prev,
+              ...conversationDetails.iterations
+            }))
+          }
+        }
       }
     }
+    
+    loadCachedPlan()
   }, [params.id, userProfile?.address, event])
 
   const handlePurchaseTicket = async () => {
@@ -331,9 +347,13 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       if (result.success) {
         toast.success(`✅ Plan accepted successfully!\n\n🔗 Tx: ${result.transactionHash?.slice(0, 8)}...\n📝 Metadata updated on-chain`)
         
-        // Clear the plan from state and cache
-        setCurationPlan(null)
-        setCurationConversationId(null)
+        // Update plan status to accepted instead of clearing
+        if (curationPlan) {
+          setCurationPlan({
+            ...curationPlan,
+            status: 'accepted'
+          })
+        }
         
         // Refresh event data to show updated metadata
         window.location.reload()
@@ -532,7 +552,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         </div>
         
         <p className="text-xs text-gray-500 mt-2">
-          {messages.length >= 4 ? 'Maximum iterations reached' : `${2 - Math.floor(messages.length / 2)} iterations remaining`}
+          {messages.length >= 4 ? 'Maximum iterations reached' : `${Math.max(0, 2 - Math.floor(messages.length / 2))} iterations remaining`}
         </p>
       </div>
     )
@@ -604,7 +624,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                     alt={curationPlan?.curation?.banner?.alt || event.title}
                     className="w-full h-full object-cover"
                   />
-                  {curationPlan && (
+                  {curationPlan && curationPlan.status !== 'accepted' && (
                     <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Button 
                         size="sm" 
@@ -627,7 +647,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                         <h1 className="text-3xl font-bold">
                           {event.title}
                         </h1>
-                        {curationPlan && (
+                        {curationPlan && curationPlan.status !== 'accepted' && (
                           <Button 
                             size="sm" 
                             variant="ghost" 
@@ -647,7 +667,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                           {curationPlan?.curation?.schedule?.recommendedDate 
                             ? new Date(curationPlan.curation.schedule.recommendedDate).toLocaleDateString()
                             : new Date(event.date).toLocaleDateString()}
-                          {curationPlan && (
+                          {curationPlan && curationPlan.status !== 'accepted' && (
                             <Button 
                               size="sm" 
                               variant="ghost" 
@@ -674,8 +694,8 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                       </div>
                     </div>
                     <div className="flex space-x-2">
-                      {/* Accept Plan Button - Only show when curation plan exists */}
-                      {curationPlan && (
+                      {/* Accept Plan Button - Only show when curation plan exists and is not accepted */}
+                      {curationPlan && curationPlan.status !== 'accepted' && (
                         <Button
                           size="sm"
                           className="bg-green-600 hover:bg-green-700 text-white"
@@ -691,6 +711,12 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                             "✓ Accept Plan"
                           )}
                         </Button>
+                      )}
+                      {/* Show accepted status if plan is accepted */}
+                      {curationPlan && curationPlan.status === 'accepted' && (
+                        <div className="px-3 py-1 text-sm bg-green-100 text-green-800 rounded-full">
+                          ✓ Plan Accepted
+                        </div>
                       )}
                       <Button
                         variant="outline"
@@ -722,7 +748,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                   <div className="space-y-4">
                     <div className="flex items-center gap-2">
                       <h3 className="text-lg font-semibold">About This Event</h3>
-                      {curationPlan && (
+                      {curationPlan && curationPlan.status !== 'accepted' && (
                         <Button 
                           size="sm" 
                           variant="ghost" 
@@ -963,10 +989,10 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                   <div className="flex items-center justify-center gap-2">
                     <div className="text-3xl font-bold">
                       {curationPlan?.curation?.pricing?.ticketPrice 
-                        ? (parseInt(curationPlan.curation.pricing.ticketPrice) / 1e18).toFixed(3)
+                        ? curationPlan.curation.pricing.ticketPrice
                         : event.ticketPrice} SEI
                     </div>
-                    {curationPlan && (
+                    {curationPlan && curationPlan.status !== 'accepted' && (
                       <Button 
                         size="sm" 
                         variant="ghost" 
@@ -1042,7 +1068,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                   <div className="flex items-center gap-1">
                     <span className="font-medium">
                       {curationPlan?.curation?.pricing?.ticketPrice 
-                        ? (parseInt(curationPlan.curation.pricing.ticketPrice) / 1e18).toFixed(3)
+                        ? curationPlan.curation.pricing.ticketPrice
                         : event.ticketPrice} SEI
                     </span>
                   </div>
