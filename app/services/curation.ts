@@ -45,7 +45,7 @@ export interface CurationResult {
   status?: string // Status of the curation (pending, plan_ready, accepted)
 }
 
-// EventFactory ABI for curation deployment
+// EventFactory ABI - same as used in create.ts and kiosk retrieval
 const EVENT_FACTORY_ABI = [
   {
     "type": "function",
@@ -63,6 +63,13 @@ const EVENT_FACTORY_ABI = [
     "name": "getCurationContract",
     "inputs": [{"name": "eventId", "type": "uint256", "internalType": "uint256"}],
     "outputs": [{"name": "", "type": "address", "internalType": "address"}],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "tokenURI",
+    "inputs": [{"name": "tokenId", "type": "uint256"}],
+    "outputs": [{"name": "", "type": "string"}],
     "stateMutability": "view"
   }
 ] as const
@@ -303,13 +310,14 @@ export async function requestCurationPlan(
   eventData: EventData
 ): Promise<CurationResult> {
   try {
-    // First check if we already have a cached plan
-    const cachedPlan = await getCachedCurationPlan(eventId, userAddress)
-    if (cachedPlan) {
-      console.log('CURATION_SERVICE: Using cached plan for event', eventId)
-      // Ensure return type is always CurationResult, never null
-      return cachedPlan as CurationResult
+    // First check if we already have a plan on blockchain
+    const blockchainPlan = await getCurationPlanFromBlockchain(eventId, userAddress)
+    if (blockchainPlan) {
+      console.log('CURATION_SERVICE: Using existing blockchain plan for event', eventId)
+      return blockchainPlan
     }
+
+    console.log('CURATION_SERVICE: Requesting new plan generation for event', eventId)
 
     const response = await fetch(`${CURATION_API_BASE}/plan`, {
       method: 'POST',
@@ -329,7 +337,20 @@ export async function requestCurationPlan(
 
     const result = await response.json()
     
-    // The API returns the complete plan data directly
+    // After plan generation, the backend stores iterations on-chain
+    // Now fetch the complete plan with iterations from blockchain
+    console.log('CURATION_SERVICE: Plan generated, loading from blockchain with iterations')
+    
+    // Wait a moment for the blockchain transaction to complete
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    
+    const finalPlan = await getCurationPlanFromBlockchain(eventId, userAddress)
+    if (finalPlan) {
+      console.log('CURATION_SERVICE: Loaded complete plan with iterations from blockchain')
+      return finalPlan
+    }
+    
+    // Fallback to backend response if blockchain fetch fails
     const planData = result.plan || {}
     
     const curationResult: CurationResult = {
@@ -343,10 +364,9 @@ export async function requestCurationPlan(
       status: result.status || 'plan_ready'
     }
 
-    // Cache the plan result for persistence
-    setCachedCurationPlan(eventId, userAddress, curationResult, result.conversationId)
-    
+    console.log('CURATION_SERVICE: Using fallback plan structure')
     return curationResult
+    
   } catch (error) {
     console.error('CURATION_SERVICE: Error requesting plan:', error)
     throw error
@@ -407,16 +427,74 @@ export async function getCurationPlan(conversationId: string): Promise<any> {
 }
 
 /**
- * Request refinement for specific aspect
- * @param conversationId Conversation ID  
- * @param aspect Aspect to refine (description, pricing, schedule, banner)
+ * Request refinement for specific aspect (using on-chain storage)
+ * @param eventId Event ID
+ * @param aspect Aspect to refine (description, pricing, schedule, banner, title)
  * @param feedback User feedback for refinement
- * @returns Updated aspect result
+ * @param userAddress User's wallet address
+ * @returns Updated aspect result with iteration number
  */
+/**
+ * Get iterations for an aspect directly from blockchain metadata (same pattern as kiosk/profile)
+ * @param eventId Event ID
+ * @param aspect Aspect to get iterations for
+ * @returns Iterations object with numeric keys
+ */
+export async function getAspectIterations(eventId: string, aspect: string): Promise<Record<number, any>> {
+  try {
+    if (!window.ethereum) {
+      throw new Error('Wallet not available')
+    }
+
+    const publicClient = createPublicClient({
+      chain: seiTestnet,
+      transport: http(process.env.NEXT_PUBLIC_SEI_TESTNET_RPC)
+    })
+
+    // Use same EventFactory ABI as create.ts
+    const eventFactoryABI = [
+      {
+        "type": "function",
+        "name": "tokenURI",
+        "inputs": [{"name": "tokenId", "type": "uint256"}],
+        "outputs": [{"name": "", "type": "string"}],
+        "stateMutability": "view"
+      }
+    ] as const
+
+    // Get metadata URI from blockchain
+    const metadataURI = await publicClient.readContract({
+      address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+      abi: eventFactoryABI,
+      functionName: 'tokenURI',
+      args: [BigInt(eventId)]
+    }) as string
+
+    if (!metadataURI || metadataURI === '') {
+      return {}
+    }
+
+    // Fetch metadata from IPFS using same pattern as kiosk/profile
+    const metadataUrl = metadataURI.replace('ipfs://', `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/`)
+    const response = await fetch(metadataUrl)
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch metadata: ${response.statusText}`)
+    }
+
+    const metadata = await response.json()
+    return metadata.iterations?.[aspect] || {}
+  } catch (error) {
+    console.error('CURATION_SERVICE: Error getting iterations:', error)
+    return {}
+  }
+}
+
 export async function requestAspectRefinement(
-  conversationId: string,
+  eventId: string,
   aspect: string,
-  feedback: string
+  feedback: string,
+  userAddress: string
 ): Promise<any> {
   try {
     const response = await fetch(`${CURATION_API_BASE}/iterate`, {
@@ -425,9 +503,10 @@ export async function requestAspectRefinement(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        conversationId,
+        eventId,
         aspect,
-        feedback
+        feedback,
+        userAddress
       })
     })
 
@@ -435,7 +514,13 @@ export async function requestAspectRefinement(
       throw new Error(`Refinement failed: ${response.statusText}`)
     }
 
-    return await response.json()
+    const result = await response.json()
+    return {
+      ...result,
+      iterationNumber: result.iterationNumber || 2, // Default to iteration #2 for feedback
+      aspect,
+      timestamp: new Date().toISOString()
+    }
   } catch (error) {
     console.error('CURATION_SERVICE: Error refining aspect:', error)
     throw error
@@ -487,14 +572,16 @@ export function getCurationScopesStatic() {
 }
 
 /**
- * Accept curation proposal and execute blockchain transaction
- * @param conversationId Conversation ID 
- * @param finalCuration Final curation data approved by user
- * @returns Transaction result
+ * Accept curation proposal and execute blockchain transaction (using on-chain storage)
+ * @param eventId Event ID
+ * @param selectedIterations Selected iteration numbers for each aspect
+ * @param userAddress User's wallet address
+ * @returns Transaction result with metadataURI
  */
 export async function acceptCurationProposal(
-  conversationId: string,
-  finalCuration: any
+  eventId: string,
+  selectedIterations: Record<string, number>,
+  userAddress: string
 ): Promise<any> {
   try {
     const response = await fetch(`${CURATION_API_BASE}/accept`, {
@@ -503,8 +590,9 @@ export async function acceptCurationProposal(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        conversationId,
-        finalCuration
+        eventId,
+        selectedIterations,
+        userAddress
       })
     })
 
@@ -514,197 +602,145 @@ export async function acceptCurationProposal(
 
     const result = await response.json()
     
-    // Clear cached plan after acceptance
-    if (finalCuration.eventId) {
-      clearCachedCurationPlan(finalCuration.eventId)
-    }
+    // Clear cached plan after acceptance since iterations are removed on-chain
+    clearCachedCurationPlan(eventId)
     
-    return result
+    return {
+      ...result,
+      success: true,
+      transactionHash: result.transactionHash,
+      metadataURI: result.metadataURI,
+      finalMetadata: result.finalMetadata
+    }
   } catch (error) {
     console.error('CURATION_SERVICE: Error accepting proposal:', error)
     throw error
   }
 }
 
-// ===== CURATION PLAN CACHING FUNCTIONS =====
-
-interface CachedCurationPlan {
-  plan: CurationResult
-  conversationId: string
-  timestamp: number
-  userAddress: string
-}
-
 /**
- * Cache curation plan in localStorage with expiration
+ * Get curation plan directly from blockchain metadata (same pattern as kiosk/profile)
+ * @param eventId Event ID
+ * @param userAddress User's wallet address  
+ * @returns Current plan state with iterations from on-chain metadata
  */
-export function setCachedCurationPlan(
-  eventId: string, 
-  userAddress: string, 
-  plan: CurationResult, 
-  conversationId: string
-): void {
+export async function getCurationPlanFromBlockchain(eventId: string, userAddress: string): Promise<CurationResult | null> {
   try {
-    const cacheKey = `curation_plan_${eventId}`
-    const cidKey = `curation_cid_${eventId}_${userAddress.toLowerCase()}`
-    
-    const cacheData: CachedCurationPlan = {
-      plan,
-      conversationId,
-      timestamp: Date.now(),
-      userAddress: userAddress.toLowerCase()
+    if (!window.ethereum) {
+      throw new Error('Wallet not available')
     }
-    
-    // Store in localStorage for fast access (like profile pattern)
-    localStorage.setItem(cacheKey, JSON.stringify(cacheData))
-    // Store conversation ID mapping for backend sync (minimal addition)
-    localStorage.setItem(cidKey, conversationId)
-    
-    console.log('CURATION_CACHE: Plan cached for event', eventId, 'conversation', conversationId)
-  } catch (error) {
-    console.error('CURATION_CACHE: Failed to cache plan:', error)
-  }
-}
 
-/**
- * Get cached curation plan if valid and belongs to current user
- * Also tries to fetch from backend if not in cache
- */
-export async function getCachedCurationPlan(eventId: string, userAddress: string): Promise<CurationResult | null> {
-  try {
-    // First check localStorage cache
-    const cacheKey = `curation_plan_${eventId}`
-    const cached = localStorage.getItem(cacheKey)
-    
-    if (cached) {
-      const cacheData: CachedCurationPlan = JSON.parse(cached)
-      
-      // Check if cache belongs to current user
-      if (cacheData.userAddress !== userAddress.toLowerCase()) {
-        clearCachedCurationPlan(eventId)
-      } else {
-        // Check if cache is still valid (24 hours)
-        const maxAge = 24 * 60 * 60 * 1000 // 24 hours in ms
-        if (Date.now() - cacheData.timestamp <= maxAge) {
-          console.log('CURATION_CACHE: Using cached plan for event', eventId)
-          return cacheData.plan
-        } else {
-          clearCachedCurationPlan(eventId)
-        }
+    const publicClient = createPublicClient({
+      chain: seiTestnet,
+      transport: http(process.env.NEXT_PUBLIC_SEI_TESTNET_RPC)
+    })
+
+    // Use same EventFactory ABI as create.ts
+    const eventFactoryABI = [
+      {
+        "type": "function",
+        "name": "tokenURI",
+        "inputs": [{"name": "tokenId", "type": "uint256"}],
+        "outputs": [{"name": "", "type": "string"}],
+        "stateMutability": "view"
       }
+    ] as const
+
+    // Get metadata URI from blockchain
+    const metadataURI = await publicClient.readContract({
+      address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+      abi: eventFactoryABI,
+      functionName: 'tokenURI',
+      args: [BigInt(eventId)]
+    }) as string
+
+    if (!metadataURI || metadataURI === '') {
+      console.log('CURATION_SERVICE: No metadata URI found for event', eventId)
+      return null
     }
+
+    // Fetch metadata from IPFS using same pattern as kiosk/profile
+    const metadataUrl = metadataURI.replace('ipfs://', `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/`)
+    const response = await fetch(metadataUrl)
     
-    // If no valid cache, try to fetch from backend
-    console.log('CURATION_CACHE: No valid cache, checking backend for conversation...')
-    try {
-      const response = await fetch(`${CURATION_API_BASE}/conversation/${eventId}/${userAddress}`)
-      
-      if (response.ok) {
-        const result = await response.json()
-        
-        if (result.success && result.plan) {
-          console.log('CURATION_CACHE: Found backend conversation, restoring plan')
-          
+    if (!response.ok) {
+      throw new Error(`Failed to fetch metadata: ${response.statusText}`)
+    }
+
+    const metadata = await response.json()
+    
+    // Check if this metadata has iterations (curation in progress)
+    if (!metadata.iterations || Object.keys(metadata.iterations).length === 0) {
+      console.log('CURATION_SERVICE: No iterations found in metadata for event', eventId)
+      return null
+    }
+
+    // Convert blockchain metadata to CurationResult format
           const curationResult: CurationResult = {
             success: true,
             eventId,
-            metadataURI: result.plan.metadataURI,
-            curation: result.plan,
-            proxyAddress: result.plan.proxyAddress || '',
-            curationAddress: result.plan.curationAddress,
-            generatedAt: result.plan.generatedAt || new Date().toISOString(),
-            status: result.status || 'plan_ready'
-          }
-          
-          // Cache the restored plan
-          setCachedCurationPlan(eventId, userAddress, curationResult, result.conversationId)
-          
-          return curationResult
-        }
-      }
-    } catch (fetchError) {
-      console.log('CURATION_CACHE: Backend fetch failed (normal if no conversation exists):', fetchError)
+      metadataURI,
+      curation: {
+        // Extract current values from metadata or iterations
+        banner: metadata.banner || { imageUrl: metadata.image, alt: metadata.name },
+        title: metadata.title || metadata.name,
+        description: metadata.description,
+        schedule: extractScheduleFromMetadata(metadata),
+        pricing: extractPricingFromMetadata(metadata),
+        // Include all iterations for UI selection
+        iterations: metadata.iterations
+      },
+      proxyAddress: metadata.proxyAddress || '',
+      curationAddress: metadata.curationAddress || '',
+      generatedAt: metadata.generatedAt || new Date().toISOString(),
+      status: metadata.status || 'plan_ready'
     }
-    
-    return null
+
+    console.log('CURATION_SERVICE: Retrieved curation plan from blockchain for event', eventId)
+    return curationResult
   } catch (error) {
-    console.error('CURATION_CACHE: Failed to get cached plan:', error)
-    clearCachedCurationPlan(eventId)
+    console.error('CURATION_SERVICE: Error getting plan from blockchain:', error)
     return null
   }
 }
 
 /**
- * Clear cached curation plan
+ * Extract schedule data from metadata for compatibility
+ */
+function extractScheduleFromMetadata(metadata: any): any {
+  // Look for schedule in iterations or attributes
+  const scheduleAttr = metadata.attributes?.find((attr: any) => attr.trait_type === 'Recommended Date') 
+  const timeAttr = metadata.attributes?.find((attr: any) => attr.trait_type === 'Recommended Time')
+  
+  return {
+    recommendedDate: scheduleAttr?.value || '',
+    recommendedTime: timeAttr?.value || ''
+  }
+}
+
+/**
+ * Extract pricing data from metadata for compatibility
+ */
+function extractPricingFromMetadata(metadata: any): any {
+  const ticketPriceAttr = metadata.attributes?.find((attr: any) => attr.trait_type === 'Recommended Ticket Price')
+  const reservePriceAttr = metadata.attributes?.find((attr: any) => attr.trait_type === 'Recommended Reserve Price')
+  
+  return {
+    ticketPrice: ticketPriceAttr?.value || '',
+    reservePrice: reservePriceAttr?.value || ''
+  }
+}
+
+/**
+ * Simple cache clearing for event (removes any localStorage cache)
  */
 export function clearCachedCurationPlan(eventId: string): void {
   try {
+    // Remove any legacy cache keys
     const cacheKey = `curation_plan_${eventId}`
     localStorage.removeItem(cacheKey)
-    console.log('CURATION_CACHE: Cleared cache for event', eventId)
+    console.log('CURATION_SERVICE: Cleared legacy cache for event', eventId)
   } catch (error) {
-    console.error('CURATION_CACHE: Failed to clear cache:', error)
-  }
-}
-
-/**
- * Get cached conversation ID for an event
- */
-export function getCachedConversationId(eventId: string, userAddress: string): string | null {
-  try {
-    // First check direct CID storage (faster, like profile pattern)
-    const cidKey = `curation_cid_${eventId}_${userAddress.toLowerCase()}`
-    const directCid = localStorage.getItem(cidKey)
-    
-    if (directCid) {
-      return directCid
-    }
-    
-    // Fallback to full cache data
-    const cacheKey = `curation_plan_${eventId}`
-    const cached = localStorage.getItem(cacheKey)
-    
-    if (!cached) return null
-    
-    const cacheData: CachedCurationPlan = JSON.parse(cached)
-    
-    // Check if cache belongs to current user
-    if (cacheData.userAddress !== userAddress.toLowerCase()) {
-      return null
-    }
-    
-    return cacheData.conversationId
-  } catch (error) {
-    console.error('CURATION_CACHE: Failed to get conversation ID:', error)
-    return null
-  }
-}
-
-/**
- * Get conversation details including iterations for persistence
- */
-export async function getConversationDetails(eventId: string, userAddress: string): Promise<any> {
-  try {
-    const response = await fetch(`${CURATION_API_BASE}/conversation/${eventId}/${userAddress}`)
-    
-    if (response.ok) {
-      const result = await response.json()
-      
-      if (result.success) {
-        console.log('CURATION_SERVICE: Retrieved conversation details:', result.conversationId)
-        return {
-          conversationId: result.conversationId,
-          plan: result.plan,
-          iterations: result.iterations,
-          status: result.status,
-          eventData: result.eventData
-        }
-      }
-    }
-    
-    return null
-  } catch (error) {
-    console.error('CURATION_SERVICE: Failed to get conversation details:', error)
-    return null
+    console.error('CURATION_SERVICE: Failed to clear cache:', error)
   }
 }

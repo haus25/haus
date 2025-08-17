@@ -19,6 +19,7 @@ import { useAuth } from "../contexts/auth"
 import { useWalletClient } from 'wagmi'
 import { toast } from "sonner"
 import { createTicketPurchaseService } from "../services/tickets"
+import { getCurationPlanFromBlockchain } from "../services/curation"
 
 type Category =
   | "standup-comedy"
@@ -41,6 +42,7 @@ export default function TicketKiosk() {
   const [showPastEvents, setShowPastEvents] = useState(false)
   const [purchasingTickets, setPurchasingTickets] = useState<Set<number>>(new Set())
   const [userOwnedTickets, setUserOwnedTickets] = useState<Set<number>>(new Set())
+  const [curatedEvents, setCuratedEvents] = useState<Set<number>>(new Set())
 
   const { events, loading, refreshEvents } = useEvents()
   const { userProfile, isConnected } = useAuth()
@@ -51,6 +53,7 @@ export default function TicketKiosk() {
     if (!isConnected || !walletClient) {
       setPurchasingTickets(new Set())
       setUserOwnedTickets(new Set())
+      setCuratedEvents(new Set())
     }
   }, [isConnected, walletClient])
 
@@ -92,6 +95,47 @@ export default function TicketKiosk() {
     const timeoutId = setTimeout(checkUserTickets, 500)
     return () => clearTimeout(timeoutId)
   }, [events, isConnected, userProfile?.address, walletClient])
+
+  // Check curation status for user's events
+  useEffect(() => {
+    const checkCurationStatus = async () => {
+      if (!isConnected || !userProfile?.address || events.length === 0) {
+        setCuratedEvents(new Set())
+        return
+      }
+
+      try {
+        console.log('CURATION_CHECK: Checking curation status for user events')
+        const curatedEventIds = new Set<number>()
+
+        // Check each of the user's events for curation status
+        for (const event of events) {
+          // Only check events owned by the current user
+          if (event.creatorAddress.toLowerCase() === userProfile.address.toLowerCase()) {
+            try {
+              const curationPlan = await getCurationPlanFromBlockchain(event.contractEventId.toString(), userProfile.address)
+              if (curationPlan && curationPlan.status === 'accepted') {
+                curatedEventIds.add(event.contractEventId)
+                console.log('CURATION_CHECK: Event', event.contractEventId, 'has been curated')
+              }
+            } catch (error) {
+              // Skip events that can't be checked or don't have curation
+              console.log(`Curation check skipped for event ${event.contractEventId}:`, error)
+            }
+          }
+        }
+
+        setCuratedEvents(curatedEventIds)
+        console.log('CURATION_CHECK: Found', curatedEventIds.size, 'curated events')
+      } catch (error) {
+        console.error('Error checking curation status:', error)
+      }
+    }
+
+    // Add a delay to avoid conflicts with other checks
+    const timeoutId = setTimeout(checkCurationStatus, 1000)
+    return () => clearTimeout(timeoutId)
+  }, [events, isConnected, userProfile?.address])
 
   const handleBuyTicket = async (event: any) => {
     if (!isConnected || !userProfile) {
@@ -490,6 +534,11 @@ export default function TicketKiosk() {
                           }`}>
                             {event.status.toUpperCase()}
                           </span>
+                          {curatedEvents.has(event.contractEventId) && (
+                            <span className="text-xs font-medium text-blue-600 ml-1">
+                              • CURATED
+                            </span>
+                          )}
                         </div>
                         {/* Progressive ID Badge */}
                         <div className="absolute bottom-2 right-2 bg-black/70 text-white px-2 py-1 rounded-md text-xs font-mono">
@@ -525,13 +574,24 @@ export default function TicketKiosk() {
                           Details
                         </Button>
                         {isConnected && userProfile && event.creatorAddress.toLowerCase() === userProfile.address.toLowerCase() && event.status === 'upcoming' ? (
-                          <Button 
-                            size="sm" 
-                            className="bg-primary text-primary-foreground hover:bg-primary/90 flex-1" 
-                            onClick={() => router.push(`/kiosk/${event.contractEventId}`)}
-                          >
-                            Curate
-                          </Button>
+                          curatedEvents.has(event.contractEventId) ? (
+                            <Button 
+                              size="sm" 
+                              className="bg-green-600 text-white hover:bg-green-700 flex-1" 
+                              disabled
+                            >
+                              <Check className="h-4 w-4 mr-2" />
+                              Curated
+                            </Button>
+                          ) : (
+                            <Button 
+                              size="sm" 
+                              className="bg-primary text-primary-foreground hover:bg-primary/90 flex-1" 
+                              onClick={() => router.push(`/kiosk/${event.contractEventId}`)}
+                            >
+                              Curate
+                            </Button>
+                          )
                         ) : (
                           <Button 
                             size="sm" 

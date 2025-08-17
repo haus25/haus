@@ -41,9 +41,8 @@ import {
   requestCurationPlan, 
   sendCurationMessage,
   hasCurationDeployed,
-  getCachedCurationPlan,
-  getCachedConversationId,
-  getConversationDetails,
+  getCurationPlanFromBlockchain,
+  getAspectIterations,
   requestAspectRefinement,
   acceptCurationProposal,
   type CurationResult
@@ -65,7 +64,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const [isCurationExpanded, setIsCurationExpanded] = useState(false)
   const [selectedCuration, setSelectedCuration] = useState<'planner' | 'promoter' | 'producer' | null>(null)
   const [isPurchasing, setIsPurchasing] = useState(false)
-  const [curationConversationId, setCurationConversationId] = useState<string | null>(null)
+
   const [curationDeployed, setCurationDeployed] = useState(false)
   const [isDeployingCuration, setIsDeployingCuration] = useState(false)
   const [curationPlan, setCurationPlan] = useState<CurationResult | null>(null)
@@ -114,36 +113,36 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     loadEventData()
   }, [params.id])
 
-  // Load cached curation plan when user profile is available
+  // Load curation plan from blockchain when user profile is available
   useEffect(() => {
     if (!userProfile?.address || !event) return
     
-    const loadCachedPlan = async () => {
-      console.log('CURATION_CACHE: Checking for cached plan...')
-      const cachedPlan = await getCachedCurationPlan(params.id, userProfile.address)
-      if (cachedPlan) {
-        console.log('CURATION_CACHE: Found cached plan, restoring state')
-        setCurationPlan(cachedPlan)
-        
-        const conversationId = getCachedConversationId(params.id, userProfile.address)
-        if (conversationId) {
-          setCurationConversationId(conversationId)
+    const loadPlanFromBlockchain = async () => {
+      console.log('CURATION_BLOCKCHAIN: Checking for on-chain plan...')
+      try {
+        const blockchainPlan = await getCurationPlanFromBlockchain(params.id, userProfile.address)
+        if (blockchainPlan) {
+          console.log('CURATION_BLOCKCHAIN: Found on-chain plan, loading iterations')
+          setCurationPlan(blockchainPlan)
           
-          // Also try to restore detailed conversation data including iterations
-          const conversationDetails = await getConversationDetails(params.id, userProfile.address)
-          if (conversationDetails?.iterations) {
-            console.log('CURATION_CACHE: Restoring iteration counts:', conversationDetails.iterations)
-            // Store iterations in local state for UI display
-            setSelectedIterations(prev => ({
-              ...prev,
-              ...conversationDetails.iterations
-            }))
+          // Load iteration counts for UI display
+          const aspects = ['banner', 'title', 'description', 'schedule', 'pricing']
+          const iterationCounts: Record<string, number> = {}
+          
+          for (const aspect of aspects) {
+            const iterations = await getAspectIterations(params.id, aspect)
+            const iterationNumbers = Object.keys(iterations).map(Number).filter(n => !isNaN(n))
+            iterationCounts[aspect] = iterationNumbers.length > 0 ? Math.max(...iterationNumbers) : 0
           }
+          
+          setSelectedIterations(iterationCounts)
         }
+      } catch (error) {
+        console.error('CURATION_BLOCKCHAIN: Error loading plan from blockchain:', error)
       }
     }
     
-    loadCachedPlan()
+    loadPlanFromBlockchain()
   }, [params.id, userProfile?.address, event])
 
   const handlePurchaseTicket = async () => {
@@ -309,9 +308,20 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         }
       )
       
-      // Store the complete plan result for display
+      // Store the complete plan result for display (already includes blockchain data)
       setCurationPlan(planResult)
-      setCurationConversationId(planResult.eventId) // Use eventId as identifier
+      
+      // Set default iterations to #1 (initial plan) if we have iterations
+      if (planResult.curation?.iterations) {
+        console.log('CURATION_PLAN: Setting default iterations to #1 (initial plan)')
+        setSelectedIterations({
+          banner: 1,
+          title: 1,
+          description: 1,
+          schedule: 1,
+          pricing: 1
+        })
+      }
       
       toast.dismiss()
       toast.success("🎨 Curation plan generated successfully!")
@@ -326,8 +336,8 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   }
 
   const handleAcceptPlan = async () => {
-    if (!curationPlan || !curationConversationId) {
-      toast.error("No curation plan to accept")
+    if (!curationPlan || !userProfile?.address) {
+      toast.error("No curation plan to accept or wallet not connected")
       return
     }
 
@@ -338,8 +348,9 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       
       // Accept the curation proposal - this will trigger blockchain update
       const result = await acceptCurationProposal(
-        curationConversationId,
-        curationPlan.curation
+        params.id,
+        selectedIterations,
+        userProfile.address
       )
       
       toast.dismiss()
@@ -347,16 +358,29 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       if (result.success) {
         toast.success(`✅ Plan accepted successfully!\n\n🔗 Tx: ${result.transactionHash?.slice(0, 8)}...\n📝 Metadata updated on-chain`)
         
-        // Update plan status to accepted instead of clearing
+        // Update plan status to accepted and clear iterations since they're no longer needed
         if (curationPlan) {
           setCurationPlan({
             ...curationPlan,
-            status: 'accepted'
+            status: 'accepted',
+            curation: {
+              ...curationPlan.curation,
+              iterations: undefined // Remove iterations after acceptance
+            }
           })
         }
         
-        // Refresh event data to show updated metadata
-        window.location.reload()
+        // Refresh the event data from blockchain to show the final accepted metadata
+        try {
+          const events = await fetchOnChainEvents()
+          const updatedEvent = events.find(e => e.contractEventId === parseInt(params.id))
+          if (updatedEvent) {
+            setEvent(updatedEvent)
+            console.log('EVENT_UPDATE: Event metadata updated after plan acceptance')
+          }
+        } catch (error) {
+          console.error('EVENT_UPDATE: Failed to refresh event data:', error)
+        }
       } else {
         throw new Error(result.error || 'Failed to accept plan')
       }
@@ -371,8 +395,8 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   }
 
   const handleDiscussion = async (aspect: string, message: string) => {
-    if (!curationConversationId) {
-      toast.error("No active curation session")
+    if (!userProfile?.address) {
+      toast.error("Please connect your wallet")
       return
     }
 
@@ -391,9 +415,10 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       toast.loading(`Discussing ${aspect} refinement...`)
       
       const result = await requestAspectRefinement(
-        curationConversationId,
+        params.id,
         aspect,
-        message
+        message,
+        userProfile.address
       )
       
       // Add agent response to local state
@@ -405,29 +430,26 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         ]
       }))
 
-      // Update the curation plan with the new result
-      if (curationPlan && result.result) {
-        const updatedPlan = { ...curationPlan }
-        if (updatedPlan.curation) {
-          // Type-safe update for known aspects
-          const curation = updatedPlan.curation as any
-          
-          // Store this as a new iteration for the aspect
-          if (!curation[`${aspect}_iterations`]) {
-            curation[`${aspect}_iterations`] = [curation[aspect]] // Store original as iteration 0
+      // Iteration is now stored on-chain via the backend
+      // Reload the plan from blockchain to get updated iterations
+      if (result.success && result.iterationNumber) {
+        console.log(`ITERATION_UPDATE: New iteration ${result.iterationNumber} created for ${aspect}`)
+        
+        try {
+          // Reload plan from blockchain to get updated iterations
+          const updatedPlan = await getCurationPlanFromBlockchain(params.id, userProfile.address)
+          if (updatedPlan) {
+            setCurationPlan(updatedPlan)
+            
+            // Update selected iteration to the new one
+            setSelectedIterations(prev => ({
+              ...prev,
+              [aspect]: result.iterationNumber
+            }))
           }
-          curation[`${aspect}_iterations`].push(result.result) // Add new iteration
-          
-          // Update the current aspect to the latest iteration
-          curation[aspect] = result.result
-          
-          // Update selected iteration to the latest one
-          setSelectedIterations(prev => ({
-            ...prev,
-            [aspect]: curation[`${aspect}_iterations`].length - 1
-          }))
+        } catch (error) {
+          console.error('ITERATION_UPDATE: Failed to reload plan from blockchain:', error)
         }
-        setCurationPlan(updatedPlan)
       }
       
       toast.dismiss()
@@ -445,44 +467,158 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const isCreator = isConnected && userProfile && event && event.creatorAddress.toLowerCase() === userProfile.address.toLowerCase()
   const canShowCuration = isCreator && event?.status === 'upcoming'
 
-  // Iteration Selector Component
+  // Iteration Selector Component with on-chain data
   const IterationSelector = ({ aspect, title }: { aspect: string, title: string }) => {
-    if (!curationPlan?.curation) return null
+    const [iterations, setIterations] = useState<Record<number, any>>({})
+    const [loading, setLoading] = useState(false)
     
-    const iterations = curationPlan.curation[`${aspect}_iterations`] || []
+    // Load iterations for this aspect from blockchain
+    useEffect(() => {
+      if (!curationPlan) return
+      
+      const loadIterations = async () => {
+        setLoading(true)
+        try {
+          const aspectIterations = await getAspectIterations(params.id, aspect)
+          setIterations(aspectIterations)
+          
+          // If we have iterations from the blockchain, update the display
+          if (Object.keys(aspectIterations).length > 0) {
+            console.log(`[IterationSelector] Loaded ${Object.keys(aspectIterations).length} iterations for ${aspect}:`, aspectIterations)
+          }
+        } catch (error) {
+          console.error(`Error loading ${aspect} iterations:`, error)
+        } finally {
+          setLoading(false)
+        }
+      }
+      
+      loadIterations()
+    }, [aspect, curationPlan])
+    
+    // Also check if iterations exist in the curation plan
+    const planIterations = curationPlan?.curation?.iterations?.[aspect] || {}
+    const allIterations = { ...planIterations, ...iterations }
+    const iterationNumbers = Object.keys(allIterations).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b)
     const selectedIteration = selectedIterations[aspect] || 0
     
-    if (iterations.length <= 1) return null // Only show if there are multiple iterations
+    // Only show iteration selector if we have a curation plan and it's not accepted
+    if (!curationPlan || curationPlan.status === 'accepted') return null
+    
+    // Ensure we always have at least #0 (original)
+    const minIterations = [0]
+    if (iterationNumbers.length === 0) {
+      // If no iterations loaded yet, just show #0
+      const displayIterations = minIterations
+    } else {
+      // Merge loaded iterations with minimum required iterations
+      const allNumbers = [...new Set([...minIterations, ...iterationNumbers])].sort((a, b) => a - b)
+    }
+    const displayIterations = iterationNumbers.length > 0 ? 
+      [...new Set([...minIterations, ...iterationNumbers])].sort((a, b) => a - b) : 
+      minIterations
     
     return (
       <div className="flex items-center space-x-2 mb-2">
-        <span className="text-sm text-gray-600">{title} Iterations:</span>
+        <span className="text-sm text-gray-600">{title} Options:</span>
         <div className="flex space-x-1">
-          {iterations.map((_: any, index: number) => (
+          {displayIterations.map((iterationNum: number) => (
             <button
-              key={index}
+              key={iterationNum}
               onClick={() => {
                 // Update selected iteration
-                setSelectedIterations(prev => ({ ...prev, [aspect]: index }))
-                
-                // Update the curation plan to show this iteration
-                const updatedPlan = { ...curationPlan }
-                const curation = updatedPlan.curation as any
-                curation[aspect] = iterations[index]
-                setCurationPlan(updatedPlan)
+                setSelectedIterations(prev => ({ ...prev, [aspect]: iterationNum }))
               }}
-              className={`px-2 py-1 text-xs rounded ${
-                index === selectedIteration 
-                  ? 'bg-red-600 text-white' 
+              className={`px-2 py-1 text-xs rounded font-medium ${
+                iterationNum === selectedIteration 
+                  ? 'bg-red-600 text-white shadow-md' 
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
+              disabled={loading}
+              title={`${getIterationLabel(iterationNum)}: Click to preview this version`}
             >
-              #{index + 1}
+              #{iterationNum}
             </button>
           ))}
         </div>
+        {loading && <span className="text-xs text-gray-500">Loading...</span>}
+        {selectedIteration !== undefined && (
+          <span className="text-xs text-gray-500">
+            Showing: {getIterationLabel(selectedIteration)}
+          </span>
+        )}
       </div>
     )
+  }
+  
+  // Helper function to get iteration labels
+  const getIterationLabel = (iterationNum: number): string => {
+    switch (iterationNum) {
+      case 0: return 'Original'
+      case 1: return 'Initial Plan'
+      default: return 'Feedback Iteration'
+    }
+  }
+
+  // Helper function to get display value based on selected iteration
+  const getDisplayValue = (aspect: string): any => {
+    if (!curationPlan?.curation?.iterations) {
+      // Fallback to direct curation plan data if no iterations
+      switch (aspect) {
+        case 'title':
+          return curationPlan?.curation?.title?.title
+        case 'description':
+          return curationPlan?.curation?.description?.description
+        case 'banner':
+          return curationPlan?.curation?.banner?.imageUrl
+        case 'pricing':
+          return curationPlan?.curation?.pricing
+        case 'schedule':
+          return curationPlan?.curation?.schedule
+      }
+      return null
+    }
+    
+    const selectedIteration = selectedIterations[aspect] || 1 // Default to iteration #1 (AI plan)
+    const iterations = curationPlan.curation.iterations[aspect]
+    
+    if (!iterations || !iterations[selectedIteration]) {
+      // Fallback to iteration #0 (original) or #1 (AI plan)
+      const fallbackIteration = iterations?.[1] || iterations?.[0]
+      if (!fallbackIteration) return null
+      
+      switch (aspect) {
+        case 'title':
+          return fallbackIteration.title
+        case 'description':
+          return fallbackIteration.description
+        case 'banner':
+          return fallbackIteration.imageUrl
+        case 'pricing':
+          return fallbackIteration
+        case 'schedule':
+          return fallbackIteration
+        default:
+          return fallbackIteration
+      }
+    }
+    
+    const iterationData = iterations[selectedIteration]
+    
+    switch (aspect) {
+      case 'title':
+        return iterationData.title
+      case 'description':
+        return iterationData.description
+      case 'banner':
+        return iterationData.imageUrl
+      case 'pricing':
+        return iterationData
+      case 'schedule':
+        return iterationData
+      default:
+        return iterationData
+    }
   }
 
   // Discussion UI Component
@@ -620,8 +756,8 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
               <CardContent className="p-0">
                 <div className="aspect-video rounded-t-lg overflow-hidden relative group">
                   <img
-                    src={curationPlan?.curation?.banner?.imageUrl || event.image}
-                    alt={curationPlan?.curation?.banner?.alt || event.title}
+                    src={getDisplayValue('banner') || event.image}
+                    alt={event.title}
                     className="w-full h-full object-cover"
                   />
                   {curationPlan && curationPlan.status !== 'accepted' && (
@@ -645,7 +781,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
                         <h1 className="text-3xl font-bold">
-                          {event.title}
+                          {getDisplayValue('title') || event.title}
                         </h1>
                         {curationPlan && curationPlan.status !== 'accepted' && (
                           <Button 
@@ -664,8 +800,8 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                       <div className="flex items-center space-x-4 text-muted-foreground">
                         <div className="flex items-center gap-1">
                           <Calendar className="h-4 w-4 mr-1" />
-                          {curationPlan?.curation?.schedule?.recommendedDate 
-                            ? new Date(curationPlan.curation.schedule.recommendedDate).toLocaleDateString()
+                          {getDisplayValue('schedule')?.recommendedDate 
+                            ? new Date(getDisplayValue('schedule').recommendedDate).toLocaleDateString()
                             : new Date(event.date).toLocaleDateString()}
                           {curationPlan && curationPlan.status !== 'accepted' && (
                             <Button 
@@ -681,8 +817,8 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                         </div>
                         <div className="flex items-center gap-1">
                           <Clock className="h-4 w-4 mr-1" />
-                          {curationPlan?.curation?.schedule?.recommendedTime 
-                            ? curationPlan.curation.schedule.recommendedTime
+                          {getDisplayValue('schedule')?.recommendedTime 
+                            ? getDisplayValue('schedule').recommendedTime
                             : new Date(event.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                         </div>
                         <div className="flex items-center">
@@ -761,7 +897,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                       )}
                     </div>
                     <p className="text-muted-foreground leading-relaxed">
-                      {curationPlan?.curation?.description?.description || event.description}
+                      {getDisplayValue('description') || event.description}
                     </p>
                     <IterationSelector aspect="description" title="Description" />
                     <DiscussionBlock aspect="description" title="Description" />
@@ -914,7 +1050,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             )}
 
             {/* Request Plan Section - Visible after curation is deployed */}
-            {canShowCuration && curationDeployed && !curationConversationId && (
+            {canShowCuration && curationDeployed && !curationPlan && (
               <Card>
                 <CardHeader>
                   <CardTitle>Event Curation Active</CardTitle>
@@ -988,8 +1124,8 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                 <div className="text-center">
                   <div className="flex items-center justify-center gap-2">
                     <div className="text-3xl font-bold">
-                      {curationPlan?.curation?.pricing?.ticketPrice 
-                        ? curationPlan.curation.pricing.ticketPrice
+                      {getDisplayValue('pricing')?.ticketPrice 
+                        ? getDisplayValue('pricing').ticketPrice
                         : event.ticketPrice} SEI
                     </div>
                     {curationPlan && curationPlan.status !== 'accepted' && (
@@ -1067,8 +1203,8 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                   </div>
                   <div className="flex items-center gap-1">
                     <span className="font-medium">
-                      {curationPlan?.curation?.pricing?.ticketPrice 
-                        ? curationPlan.curation.pricing.ticketPrice
+                      {getDisplayValue('pricing')?.ticketPrice 
+                        ? getDisplayValue('pricing').ticketPrice
                         : event.ticketPrice} SEI
                     </span>
                   </div>
