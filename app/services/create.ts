@@ -4,6 +4,7 @@ import { createPublicClient, createWalletClient, custom, formatEther, parseEther
 import { seiTestnet, dateToUnixTimestamp, waitForTransaction } from '../lib/sei'
 import { getPinataService } from './pinata'
 import { streamingService } from './streaming'
+import { XMTP } from '../lib/xmtp'
 
 // Contract addresses from environment variables
 const CONTRACT_ADDRESSES = {
@@ -105,6 +106,7 @@ export interface EventMetadata {
   category: string
   duration: number
   chunks: any[] // Will be populated during the live stream
+  xmtpGroupId?: string // XMTP group ID for chat discovery
   attributes: Array<{
     trait_type: string
     value: string | number
@@ -245,7 +247,37 @@ export class EventFactoryService {
         console.log('CONTRACT_CALL: Step 1 - No banner image provided, using placeholder')
       }
 
-      // Step 2: Prepare metadata
+      // Step 2: Get expected event ID early (needed for XMTP group creation)
+      const currentEventId = await this.getPublicClient().readContract({
+        address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
+        abi: EVENT_FACTORY_ABI,
+        functionName: 'totalEvents'
+      })
+      
+      const expectedEventId = Number(currentEventId)
+      console.log('CONTRACT_CALL: Current events count:', currentEventId.toString())
+      console.log('CONTRACT_CALL: Expected new event ID:', expectedEventId)
+
+      // Step 3: Create XMTP group BEFORE metadata upload (so we can include groupId)
+      let xmtpGroupId = ''
+      console.log('CONTRACT_CALL: Step 3 - Creating XMTP optimistic group for event chat')
+      try {
+        // Initialize creator's XMTP client
+        console.log('CONTRACT_CALL: Initializing creator XMTP client...')
+        await XMTP.initializeClient(this.getWalletClient(), userAddress)
+
+        // Create optimistic group and get groupId - FAIL FAST if this fails
+        const { groupId } = await XMTP.createEventGroup(expectedEventId.toString(), this.getWalletClient(), userAddress)
+        xmtpGroupId = groupId
+        console.log('CONTRACT_CALL: ✅ XMTP optimistic group created, ID:', xmtpGroupId)
+        
+      } catch (xmtpError) {
+        console.error('CONTRACT_CALL: ❌ XMTP group creation failed:', xmtpError)
+        // Fail fast - don't create event without chat capability
+        throw new Error('Could not initialize chat. Please try creating the event again.')
+      }
+
+      // Step 4: Prepare metadata with XMTP group ID
       const metadata: EventMetadata = {
         name: formData.title,
         description: formData.description,
@@ -253,6 +285,7 @@ export class EventFactoryService {
         category: formData.category,
         duration: formData.duration,
         chunks: [], // Will be populated during live stream
+        xmtpGroupId, // Include XMTP group ID for discovery
         attributes: [
           {
             trait_type: 'Category',
@@ -277,12 +310,12 @@ export class EventFactoryService {
         ]
       }
 
-      // Step 3: Upload metadata to IPFS
-      console.log('CONTRACT_CALL: Step 2 - Uploading metadata to IPFS')
+      // Step 5: Upload metadata to IPFS (now includes XMTP group ID)
+      console.log('CONTRACT_CALL: Step 5 - Uploading metadata with XMTP group ID to IPFS')
       const metadataURI = await this.uploadMetadata(metadata)
-      console.log('CONTRACT_CALL: Metadata upload completed')
+      console.log('CONTRACT_CALL: Metadata upload completed with XMTP group ID')
 
-      // Step 4: Prepare contract parameters
+      // Step 6: Prepare contract parameters
       const startDateTime = new Date(formData.date!)
       const [hours, minutes] = formData.time.split(':').map(Number)
       startDateTime.setHours(hours, minutes, 0, 0)
@@ -296,17 +329,6 @@ export class EventFactoryService {
 
       // For simplified event creation without delegation
       console.log('CONTRACT_CALL: User address (creator):', userAddress)
-      
-      // Step 5: Get current events count to predict the new event ID
-      const currentEventId = await this.getPublicClient().readContract({
-        address: CONTRACT_ADDRESSES.EventFactory as `0x${string}`,
-        abi: EVENT_FACTORY_ABI,
-        functionName: 'totalEvents'
-      })
-      
-      const expectedEventId = Number(currentEventId)
-      console.log('CONTRACT_CALL: Current events count:', currentEventId.toString())
-      console.log('CONTRACT_CALL: Expected new event ID:', expectedEventId)
 
       // Step 6: Simulate the contract call first
       console.log('CONTRACT_CALL: Step 5 - Simulating CreationWrapper transaction')
@@ -430,7 +452,6 @@ export class EventFactoryService {
         }
       }
 
-      // Step 4: Reserve streaming URL
               // Step 4: Generate streaming URLs directly (no backend needed)
         console.log('CONTRACT_CALL: Step 4 - Generating streaming URLs directly')
         
@@ -439,6 +460,9 @@ export class EventFactoryService {
 
         console.log('CONTRACT_CALL: Stream URLs generated:', streamUrls)
         console.log('CONTRACT_CALL: Event room accessible at:', roomUrl)
+
+        // Step 5: XMTP group already created and included in metadata above
+        console.log('CONTRACT_CALL: Step 5 - XMTP group ID included in metadata:', xmtpGroupId || 'none')
 
         // Summary of operations
         console.log('CONTRACT_CALL: 🎉 Event creation summary:')

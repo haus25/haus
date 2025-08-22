@@ -370,17 +370,20 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           })
         }
         
-        // Refresh the event data from blockchain to show the final accepted metadata
-        try {
-          const events = await fetchOnChainEvents()
-          const updatedEvent = events.find(e => e.contractEventId === parseInt(params.id))
-          if (updatedEvent) {
-            setEvent(updatedEvent)
-            console.log('EVENT_UPDATE: Event metadata updated after plan acceptance')
+        // Wait for blockchain update to propagate, then refresh event data
+        setTimeout(async () => {
+          try {
+            console.log('EVENT_UPDATE: Refreshing event data after plan acceptance...')
+            const events = await fetchOnChainEvents()
+            const updatedEvent = events.find(e => e.contractEventId === parseInt(params.id))
+            if (updatedEvent) {
+              setEvent(updatedEvent)
+              console.log('EVENT_UPDATE: Event metadata updated after plan acceptance')
+            }
+          } catch (error) {
+            console.error('EVENT_UPDATE: Failed to refresh event data:', error)
           }
-        } catch (error) {
-          console.error('EVENT_UPDATE: Failed to refresh event data:', error)
-        }
+        }, 3000) // Wait 3 seconds for blockchain update to propagate
       } else {
         throw new Error(result.error || 'Failed to accept plan')
       }

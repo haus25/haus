@@ -5,6 +5,16 @@ import { parseAbi, getContract } from 'viem'
 import { seiTestnet, waitForTransaction } from '../lib/sei'
 import { CONTRACT_ADDRESSES, EVENT_FACTORY_ABI } from '../lib/constants'
 import TicketKioskABI from '../contracts/abis/TicketKioskABI.json'
+import { XMTP } from '../lib/xmtp'
+
+// Typed error for ticket gating failures
+export class TicketGateError extends Error {
+  code = 'NO_TICKET'
+  constructor(msg = 'No valid ticket for this event') { 
+    super(msg)
+    this.name = 'TicketGateError'
+  }
+}
 
 // Enhanced ABI for ticket operations
 const TICKET_KIOSK_ABI = parseAbi([
@@ -579,6 +589,24 @@ export class TicketService {
         }
       } catch (error) {
         console.warn('TICKETS: Could not parse ticket details from logs')
+      }
+
+      // Initialize XMTP for participant (they'll be added to group by creator)
+      console.log('TICKETS: 🎫 Initializing XMTP client for participant')
+      try {
+        // Initialize participant's XMTP client (creates their inbox ID)
+        console.log('TICKETS: Initializing XMTP client for participant:', userAddress)
+        await XMTP.initializeParticipantForEvent(this.getWalletClient(), userAddress)
+        
+        console.log('TICKETS: ✅ Participant XMTP client initialized')
+        console.log('TICKETS: 📝 Creator will be notified to add participant to group')
+        
+        // NOTE: The actual group invitation must be done by the creator
+        // This will be handled via blockchain event listener in the creator's context
+        
+      } catch (xmtpError) {
+        console.warn('TICKETS: ⚠️ XMTP initialization failed (non-critical):', xmtpError)
+        // Don't fail ticket purchase if XMTP fails
       }
 
       return {

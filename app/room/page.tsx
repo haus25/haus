@@ -38,7 +38,7 @@ import {
   VolumeX
 } from "lucide-react"
 import { toast } from "sonner"
-import { createTicketService } from "../services/tickets"
+import { createTicketService, TicketGateError } from "../services/tickets"
 import { sendTip, getEventTippingData } from "../services/tipping"
 import { eventChatService, type ChatMessage } from "../services/chat"
 
@@ -134,6 +134,8 @@ export default function EventRoom() {
         // Get all participants (creator + ticket holders) for chat
         const participants = [eventDetails.creator.toLowerCase()]
         
+        let userHasTicket = false
+        
         if (userIsCreator) {
           // User is the creator
           setIsCreator(true)
@@ -145,7 +147,7 @@ export default function EventRoom() {
           setIsCreator(false)
           setIsParticipant(true)
           
-          const userHasTicket = await ticketService.userHasTicket(Number(eventId), userProfile.address)
+          userHasTicket = await ticketService.userHasTicket(Number(eventId), userProfile.address)
           setHasTicket(userHasTicket)
           
           if (userHasTicket) {
@@ -155,6 +157,14 @@ export default function EventRoom() {
             // No ticket - show message and let user decide to buy ticket
             setStreamStatus(prev => ({ ...prev, hasAccess: false }))
             console.log('EVENT_ROOM: User does not have a ticket for this event')
+          }
+        }
+        
+        // Always include current user in participants list if they have access
+        if (userIsCreator || userHasTicket) {
+          const userInList = participants.some(p => p === userProfile.address.toLowerCase())
+          if (!userInList) {
+            participants.push(userProfile.address.toLowerCase())
           }
         }
         
@@ -170,29 +180,105 @@ export default function EventRoom() {
     verifyUserAccess()
   }, [eventId, userProfile, walletClient, isConnected, router])
 
-  // Initialize XMTP chat when user has access
+  // CRITICAL: Blockchain event listener for creator to automatically add XMTP participants
+  useEffect(() => {
+    if (!isCreator || !eventId || !walletClient || !userProfile?.address) return
+
+    let unwatch: (() => void) | undefined
+
+    ;(async () => {
+      try {
+        console.log('EVENT_ROOM: 🎫 Setting up ticket purchase listener for creator')
+        
+        const { createPublicClient, http, parseAbi } = await import('viem')
+        const { seiTestnet } = await import('../lib/sei')
+        
+        const publicClient = createPublicClient({ 
+          chain: seiTestnet, 
+          transport: http(process.env.NEXT_PUBLIC_SEI_TESTNET_RPC!) 
+        })
+
+        const ticketService = createTicketService(walletClient)
+        const { ticketKioskAddress } = await ticketService.getEventDetails(Number(eventId))
+        
+        const abi = parseAbi([
+          'event TicketMinted(uint256 indexed ticketId, address indexed buyer, string ticketName, string artCategory, uint256 price)'
+        ])
+
+        unwatch = publicClient.watchContractEvent({
+          address: ticketKioskAddress as `0x${string}`,
+          abi,
+          eventName: 'TicketMinted',
+          onLogs: async (logs) => {
+            const { XMTP } = await import('../lib/xmtp')
+            for (const l of logs) {
+              const participantAddress = (l.args as any).buyer as string
+              try {
+                console.log('EVENT_ROOM: 🎫 Ticket purchased! Adding to XMTP group:', participantAddress)
+                await XMTP.addParticipantToGroup(eventId!, participantAddress)
+                console.log('EVENT_ROOM: ✅ Participant added to XMTP group:', participantAddress)
+              } catch (e: any) {
+                const msg = (e.message || '').toLowerCase()
+                if (msg.includes('group_not_local') || msg.includes('no_chat_registered')) {
+                  console.log('EVENT_ROOM: 🔄 Group not local, lazy-joining then retrying...')
+                  try {
+                    // Lazy-join: ensure creator has the group local, then retry
+                    await XMTP.joinEventGroup(eventId!, walletClient!, userProfile!.address, () => {})
+                    await XMTP.addParticipantToGroup(eventId!, participantAddress)
+                    console.log('EVENT_ROOM: ✅ Participant added after lazy-join retry:', participantAddress)
+                  } catch (retryError) {
+                    console.error('EVENT_ROOM: ❌ Failed even after lazy-join retry:', retryError)
+                  }
+                } else {
+                  console.error('EVENT_ROOM: ❌ Error adding participant to XMTP group:', e)
+                }
+              }
+            }
+          }
+        })
+
+        console.log('EVENT_ROOM: ✅ Event listener setup complete')
+      } catch (error) {
+        console.error('EVENT_ROOM: ❌ Error setting up event listener:', error)
+      }
+    })()
+
+    return () => { 
+      try { 
+        unwatch?.() 
+        console.log('EVENT_ROOM: 🧹 Event listener cleaned up')
+      } catch {} 
+    }
+  }, [isCreator, eventId, walletClient, userProfile?.address])
+
+  // Initialize XMTP chat when user has access (FIXED IMPLEMENTATION)
   useEffect(() => {
     const initializeChat = async () => {
-      if (!eventId || !userProfile?.address || !walletClient || !streamStatus.hasAccess || participantAddresses.length === 0) {
+      // Check all required conditions
+      if (!eventId || !userProfile?.address || !walletClient || !streamStatus.hasAccess) {
+        console.log('ROOM: Chat initialization skipped - missing requirements')
         return
       }
 
       if (isChatInitialized) {
-        return // Already initialized
+        return
       }
 
       try {
         console.log('ROOM: Initializing XMTP chat for event:', eventId)
+        console.log('ROOM: User role:', isCreator ? 'Creator' : 'Participant')
         
-        // Initialize chat with XMTP
+        // FIXED: Use simplified chat initialization
+        // The XMTP group should already exist from minting time
         const history = await eventChatService.initializeEventChat(
           eventId,
           walletClient,
           userProfile.address,
-          participantAddresses,
+          isCreator,
           (newMessage: ChatMessage) => {
             setChatMessages(prev => [...prev, newMessage])
-          }
+          },
+          eventData?.ticketKioskAddress // Use ticket kiosk for verification
         )
         
         // Load message history
@@ -200,19 +286,52 @@ export default function EventRoom() {
         setIsChatInitialized(true)
         
         // Add system message for user joining
-        eventChatService.addUserJoinedMessage(eventId, userProfile.address)
+        if (isCreator) {
+          eventChatService.addSystemMessage(eventId, `Event creator ${userProfile.displayName || 'Host'} started the stream`, "join")
+        } else {
+          eventChatService.addUserJoinedMessage(eventId, userProfile.address)
+        }
         
-        console.log('ROOM: Chat initialized successfully with', history.length, 'messages')
+        console.log('ROOM: ✅ Chat initialized successfully with', history.length, 'messages')
         
       } catch (error) {
-        console.error('ROOM: Error initializing chat:', error)
-        // Don't show error to user, chat is secondary functionality
-        console.warn('ROOM: Chat will be disabled for this session')
+        console.error('ROOM: ⚠️ Error initializing chat:', error)
+        
+        // Map different error types to appropriate user messages
+        let errorMessage = `Welcome to ${eventData?.title || `Event #${eventId}`}!`
+        
+        if (error instanceof TicketGateError) {
+          // Genuine ticket gating issue
+          errorMessage = 'You need a valid ticket to join this event chat.'
+        } else if (error instanceof Error) {
+          if (error.message.includes('not yet available')) {
+            errorMessage = 'Event chat will be available when the creator starts streaming.'
+          } else {
+            // Show the actual error for debugging
+            errorMessage = `We couldn't load the chat. ${error.message}`
+          }
+        } else {
+          errorMessage = 'Chat is temporarily unavailable. Please refresh to try again.'
+        }
+        
+        // Still mark as initialized to prevent retries, but show error message
+        setIsChatInitialized(true)
+        setChatMessages([{
+          id: 1,
+          user: "System",
+          message: errorMessage,
+          timestamp: new Date().toISOString(),
+          isSystem: true
+        }])
+        
+        console.log('ROOM: Chat initialized in limited mode due to error')
       }
     }
 
-    initializeChat()
-  }, [eventId, userProfile, walletClient, streamStatus.hasAccess, participantAddresses, isChatInitialized])
+    // Add a small delay to ensure state is settled
+    const timeoutId = setTimeout(initializeChat, 500)
+    return () => clearTimeout(timeoutId)
+  }, [eventId, userProfile, walletClient, streamStatus.hasAccess, isCreator, hasTicket, eventData])
 
   // Cleanup chat on unmount
   useEffect(() => {
@@ -359,20 +478,7 @@ export default function EventRoom() {
     loadEventData()
   }, [eventId])
 
-  // Initialize chat with welcome message
-  useEffect(() => {
-    if (eventData && userProfile) {
-      setChatMessages([
-        {
-          id: 1,
-          user: "system",
-          message: `Welcome to ${eventData.title || `Event #${eventId}`}!`,
-          timestamp: new Date().toISOString(),
-          isSystem: true
-        }
-      ])
-    }
-  }, [eventData, userProfile])
+  // REMOVED: Redundant welcome message initialization (handled by XMTP init)
 
   // Handle stream status changes
   const handleStreamStatusChange = useCallback((status: {
@@ -387,13 +493,14 @@ export default function EventRoom() {
   // Handle chat message sending
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (chatMessage.trim() && isChatInitialized) {
+    if (chatMessage.trim() && userProfile?.address) {
+      const messageToSend = chatMessage
+      setChatMessage("") // Clear input immediately for better UX
+      
       try {
-        await eventChatService.sendMessage(chatMessage)
-        setChatMessage("")
+        await eventChatService.sendMessage(messageToSend, userProfile.address)
       } catch (error) {
         console.error('ROOM: Error sending message:', error)
-        toast.error('Failed to send message')
       }
     }
   }
@@ -873,7 +980,7 @@ export default function EventRoom() {
                     onMessageChange={setChatMessage}
                     onSendMessage={handleSendMessage}
                     height="400px"
-                    disabled={!isChatInitialized}
+                    disabled={!streamStatus.hasAccess}
                   />
                 </CardContent>
               </Card>
@@ -939,7 +1046,7 @@ export default function EventRoom() {
                   onSendMessage={handleSendMessage}
                   isOverlay={true}
                   height="calc(100% - 64px)"
-                  disabled={!isChatInitialized}
+                  disabled={!streamStatus.hasAccess}
                 />
               </CardContent>
             </Card>
