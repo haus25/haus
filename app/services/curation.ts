@@ -669,9 +669,12 @@ export async function getCurationPlanFromBlockchain(eventId: string, userAddress
 
     const metadata = await response.json()
     
-    // Check if this metadata has iterations (curation in progress)
-    if (!metadata.iterations || Object.keys(metadata.iterations).length === 0) {
-      console.log('CURATION_SERVICE: No iterations found in metadata for event', eventId)
+    // Check if this metadata has iterations (curation in progress) OR is already accepted
+    const hasIterations = metadata.iterations && Object.keys(metadata.iterations).length > 0
+    const isAccepted = metadata.status === 'accepted'
+    
+    if (!hasIterations && !isAccepted) {
+      console.log('CURATION_SERVICE: No curation data found in metadata for event', eventId)
       return null
     }
 
