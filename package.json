@@ -47,7 +47,6 @@
     "@tanstack/react-query": "^5.85.0",
     "@types/three": "^0.179.0",
     "@wagmi/core": "^2.19.0",
-    "@xmtp/browser-sdk": "^4.0.2",
     "autoprefixer": "^10.4.21",
     "axios": "latest",
     "bufferutil": "latest",
