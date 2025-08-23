@@ -358,19 +358,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       if (result.success) {
         toast.success(`✅ Plan accepted successfully!\n\n🔗 Tx: ${result.transactionHash?.slice(0, 8)}...\n📝 Metadata updated on-chain`)
         
-        // Update plan status to accepted and clear iterations since they're no longer needed
-        if (curationPlan) {
-          setCurationPlan({
-            ...curationPlan,
-            status: 'accepted',
-            curation: {
-              ...curationPlan.curation,
-              iterations: undefined // Remove iterations after acceptance
-            }
-          })
-        }
-        
-        // Wait for blockchain update to propagate, then refresh event data
+        // Wait for blockchain update to propagate, then refresh event data and update plan status
         setTimeout(async () => {
           try {
             console.log('EVENT_UPDATE: Refreshing event data after plan acceptance...')
@@ -379,6 +367,18 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             if (updatedEvent) {
               setEvent(updatedEvent)
               console.log('EVENT_UPDATE: Event metadata updated after plan acceptance')
+              
+              // Now safely update the curation plan status after confirming blockchain update
+              if (curationPlan) {
+                setCurationPlan({
+                  ...curationPlan,
+                  status: 'accepted',
+                  curation: {
+                    ...curationPlan.curation,
+                    iterations: undefined // Remove iterations after acceptance
+                  }
+                })
+              }
             }
           } catch (error) {
             console.error('EVENT_UPDATE: Failed to refresh event data:', error)
@@ -566,19 +566,23 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   // Helper function to get display value based on selected iteration
   const getDisplayValue = (aspect: string): any => {
     if (!curationPlan?.curation?.iterations) {
-      // Fallback to direct curation plan data if no iterations
-      switch (aspect) {
-        case 'title':
-          return curationPlan?.curation?.title?.title
-        case 'description':
-          return curationPlan?.curation?.description?.description
-        case 'banner':
-          return curationPlan?.curation?.banner?.imageUrl
-        case 'pricing':
-          return curationPlan?.curation?.pricing
-        case 'schedule':
-          return curationPlan?.curation?.schedule
+      // If plan is accepted, show accepted values from direct curation plan data
+      // If no plan or iterations, fallback to original event data
+      if (curationPlan?.status === 'accepted') {
+        switch (aspect) {
+          case 'title':
+            return curationPlan?.curation?.title?.title
+          case 'description':
+            return curationPlan?.curation?.description?.description
+          case 'banner':
+            return curationPlan?.curation?.banner?.imageUrl
+          case 'pricing':
+            return curationPlan?.curation?.pricing
+          case 'schedule':
+            return curationPlan?.curation?.schedule
+        }
       }
+      // Fallback to original event data
       return null
     }
     

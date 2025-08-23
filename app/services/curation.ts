@@ -4,7 +4,7 @@ import { createWalletClient, createPublicClient, custom, http } from 'viem'
 import { seiTestnet } from '../lib/sei'
 
 // Import contract addresses from constants
-import { CONTRACT_ADDRESSES } from '../lib/constants'
+import { CONTRACT_ADDRESSES, EVENT_FACTORY_ABI } from '../lib/constants'
 
 const CURATION_API_BASE = process.env.NEXT_PUBLIC_CURATION_URL || 'http://localhost:3001'
 
@@ -45,34 +45,7 @@ export interface CurationResult {
   status?: string // Status of the curation (pending, plan_ready, accepted)
 }
 
-// EventFactory ABI - same as used in create.ts and kiosk retrieval
-const EVENT_FACTORY_ABI = [
-  {
-    "type": "function",
-    "name": "deployCurationForEvent",
-    "inputs": [
-      {"name": "eventId", "type": "uint256", "internalType": "uint256"},
-      {"name": "scope", "type": "uint256", "internalType": "uint256"},
-      {"name": "description", "type": "string", "internalType": "string"}
-    ],
-    "outputs": [{"name": "curationAddress", "type": "address", "internalType": "address"}],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "getCurationContract",
-    "inputs": [{"name": "eventId", "type": "uint256", "internalType": "uint256"}],
-    "outputs": [{"name": "", "type": "address", "internalType": "address"}],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "tokenURI",
-    "inputs": [{"name": "tokenId", "type": "uint256"}],
-    "outputs": [{"name": "", "type": "string"}],
-    "stateMutability": "view"
-  }
-] as const
+
 
 /**
  * Deploy curation contract for an event

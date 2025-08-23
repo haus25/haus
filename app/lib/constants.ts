@@ -141,6 +141,13 @@ export const EVENT_FACTORY_ABI = [
     ],
     "outputs": [{"name": "curationAddress", "type": "address", "internalType": "address"}],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "tokenURI",
+    "inputs": [{"name": "tokenId", "type": "uint256", "internalType": "uint256"}],
+    "outputs": [{"name": "", "type": "string", "internalType": "string"}],
+    "stateMutability": "view"
   }
 ] as const
 

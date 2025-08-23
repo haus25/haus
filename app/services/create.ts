@@ -4,6 +4,7 @@ import { createPublicClient, createWalletClient, custom, formatEther, parseEther
 import { seiTestnet, dateToUnixTimestamp, waitForTransaction } from '../lib/sei'
 import { getPinataService } from './pinata'
 import { streamingService } from './streaming'
+import { EVENT_FACTORY_ABI } from '../lib/constants'
 
 // Contract addresses from environment variables
 const CONTRACT_ADDRESSES = {
@@ -31,55 +32,6 @@ const CREATION_WRAPPER_ABI = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  }
-] as const
-
-// EventFactory ABI for reading events
-const EVENT_FACTORY_ABI = [
-  {
-    "type": "function",
-    "name": "totalEvents",
-    "inputs": [],
-    "outputs": [{"name": "", "type": "uint256", "internalType": "uint256"}],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getEvent",
-    "inputs": [{"name": "eventId", "type": "uint256", "internalType": "uint256"}],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct IEventFactory.EventData",
-        "components": [
-          {"name": "creator", "type": "address", "internalType": "address"},
-          {"name": "KioskAddress", "type": "address", "internalType": "address"},
-          {"name": "curationAddress", "type": "address", "internalType": "address"},
-          {"name": "startDate", "type": "uint96", "internalType": "uint96"},
-          {"name": "eventDuration", "type": "uint96", "internalType": "uint96"},
-          {"name": "reservePrice", "type": "uint96", "internalType": "uint96"},
-          {"name": "finalized", "type": "bool", "internalType": "bool"},
-          {"name": "metadataURI", "type": "string", "internalType": "string"},
-          {"name": "artCategory", "type": "string", "internalType": "string"}
-        ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "event",
-    "name": "EventCreated",
-    "inputs": [
-      {"name": "eventId", "type": "uint256", "indexed": true, "internalType": "uint256"},
-      {"name": "creator", "type": "address", "indexed": true, "internalType": "address"},
-      {"name": "startDate", "type": "uint256", "indexed": false, "internalType": "uint256"},
-      {"name": "reservePrice", "type": "uint256", "indexed": false, "internalType": "uint256"},
-      {"name": "metadataURI", "type": "string", "indexed": false, "internalType": "string"},
-      {"name": "artCategory", "type": "string", "indexed": false, "internalType": "string"},
-      {"name": "ticketKioskAddress", "type": "address", "indexed": false, "internalType": "address"}
-    ],
-    "anonymous": false
   }
 ] as const
 

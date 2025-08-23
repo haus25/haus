@@ -2,64 +2,10 @@
 
 import { createPublicClient, http, formatEther } from 'viem'
 import { seiTestnet } from '../lib/sei'
+import { CONTRACT_ADDRESSES, EVENT_FACTORY_ABI } from '../lib/constants'
 
-// Contract addresses from environment variables
-const CONTRACT_ADDRESSES = {
-  EVENT_FACTORY: process.env.NEXT_PUBLIC_EVENT_FACTORY!,
-} as const
+// Note: CONTRACT_ADDRESSES imported from constants
 
-// EventFactory ABI for getting event details
-const EVENT_FACTORY_ABI = [
-  {
-    "type": "function",
-    "name": "getEvent",
-    "inputs": [{"name": "eventId", "type": "uint256", "internalType": "uint256"}],
-    "outputs": [
-      {
-        "name": "",
-        "type": "tuple",
-        "internalType": "struct EventFactory.EventData", 
-        "components": [
-          {"name": "creator", "type": "address", "internalType": "address"},
-          {"name": "startDate", "type": "uint256", "internalType": "uint256"},
-          {"name": "eventDuration", "type": "uint256", "internalType": "uint256"},
-          {"name": "reservePrice", "type": "uint256", "internalType": "uint256"},
-          {"name": "metadataURI", "type": "string", "internalType": "string"},
-          {"name": "artCategory", "type": "string", "internalType": "string"},
-          {"name": "KioskAddress", "type": "address", "internalType": "address"},
-          {"name": "curationAddress", "type": "address", "internalType": "address"},
-          {"name": "finalized", "type": "bool", "internalType": "bool"}
-        ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "totalEvents",
-    "inputs": [],
-    "outputs": [{"name": "", "type": "uint256", "internalType": "uint256"}],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getCurationContract",
-    "inputs": [{"name": "eventId", "type": "uint256", "internalType": "uint256"}],
-    "outputs": [{"name": "", "type": "address", "internalType": "address"}],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "deployCurationForEvent",
-    "inputs": [
-      {"name": "eventId", "type": "uint256", "internalType": "uint256"},
-      {"name": "scope", "type": "uint256", "internalType": "uint256"},
-      {"name": "description", "type": "string", "internalType": "string"}
-    ],
-    "outputs": [{"name": "curationAddress", "type": "address", "internalType": "address"}],
-    "stateMutability": "nonpayable"
-  }
-] as const
 
 /**
  * Create a public client for blockchain interactions

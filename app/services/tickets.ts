@@ -326,27 +326,57 @@ export class TicketService {
           // Get ticket kiosk data  
           const kioskData = await this.getTicketKioskData(eventData.KioskAddress)
           
-          // Parse metadata
+          // Get the latest tokenURI (contains the most up-to-date metadata)
+          let tokenURI = ''
+          try {
+            tokenURI = await publicClient.readContract({
+              address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+              abi: EVENT_FACTORY_ABI,
+              functionName: 'tokenURI',
+              args: [BigInt(i)],
+            }) as string
+          } catch (error) {
+            console.warn(`Failed to get tokenURI for event ${i}, falling back to metadataURI`)
+            // Validate metadataURI before using it as fallback
+            if (eventData.metadataURI && 
+                !eventData.metadataURI.includes('TEST') && 
+                !eventData.metadataURI.includes('FIXED')) {
+              tokenURI = eventData.metadataURI
+            } else {
+              console.warn(`Invalid metadataURI detected for event ${i}: ${eventData.metadataURI}`)
+              tokenURI = '' // This will trigger fallback metadata
+            }
+          }
+
+          // Parse metadata using tokenURI (most up-to-date)
           let metadata: any = {}
           try {
-            if (eventData.metadataURI) {
-              if (eventData.metadataURI.startsWith('ipfs://')) {
-                const ipfsHash = eventData.metadataURI.slice(7)
-                const pinataGatewayUrl = `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${ipfsHash}`
-                const response = await fetch(pinataGatewayUrl)
-                if (response.ok) {
-                  metadata = await response.json()
+            if (tokenURI) {
+              if (tokenURI.startsWith('ipfs://')) {
+                const ipfsHash = tokenURI.slice(7)
+                // Validate IPFS hash format (basic check for valid characters and length)
+                if (ipfsHash && ipfsHash.match(/^[A-Za-z0-9]{44,59}$/) && !ipfsHash.includes('TEST') && !ipfsHash.includes('FIXED')) {
+                  const pinataGatewayUrl = `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${ipfsHash}`
+                  const response = await fetch(pinataGatewayUrl)
+                  if (response.ok) {
+                    metadata = await response.json()
+                  } else {
+                    console.warn(`Failed to fetch metadata from ${pinataGatewayUrl}: ${response.status}`)
+                  }
+                } else {
+                  console.warn(`Invalid IPFS hash detected: ${ipfsHash}`)
                 }
-              } else if (eventData.metadataURI.startsWith('http')) {
-                const response = await fetch(eventData.metadataURI)
+              } else if (tokenURI.startsWith('http')) {
+                const response = await fetch(tokenURI)
                 if (response.ok) {
                   metadata = await response.json()
                 }
               } else {
-                metadata = JSON.parse(eventData.metadataURI)
+                metadata = JSON.parse(tokenURI)
               }
             }
           } catch (error) {
+            console.warn(`Failed to parse metadata for event ${i}:`, error)
             metadata = {
               name: `Event #${i}`,
               description: 'Event description not available',
