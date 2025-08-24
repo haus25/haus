@@ -239,7 +239,7 @@ export const mockEvents = [
     videoUrl: "https://assets.mixkit.co/videos/preview/mixkit-watercolor-painting-close-up-69-large.mp4",
   },
 
-  // Creative Workshop
+  // Podcasting
   {
     id: 16,
     title: "Digital Art Creation Workshop",

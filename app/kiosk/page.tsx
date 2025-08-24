@@ -27,7 +27,7 @@ type Category =
   | "poetry-slam"
   | "improv"
   | "live-streaming"
-  | "creative-workshop"
+  | "podcasting"
 
 type SortOption = "date-earliest" | "date-latest" | "price-low-high" | "price-high-low"
 
@@ -435,7 +435,7 @@ export default function TicketKiosk() {
                     { id: "poetry-slam", label: "Poetry Slam" },
                     { id: "improv", label: "Improv" },
                     { id: "live-streaming", label: "Live Streaming" },
-                    { id: "creative-workshop", label: "Creative Workshop" },
+                    { id: "podcasting", label: "Podcasting" },
                   ].map((category) => (
                     <div
                       key={category.id}
@@ -569,33 +569,33 @@ export default function TicketKiosk() {
                           <span>{event.ticketPrice} SEI</span>
                         </div>
                       </CardContent>
-                      <CardFooter className="p-4 pt-0 flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => handleViewDetails(event)} className="flex-1">
+                      <CardFooter className="p-4 pt-0 flex gap-2 w-full">
+                        <Button variant="outline" size="sm" onClick={() => handleViewDetails(event)} className="flex-1 min-w-0 text-xs sm:text-sm">
                           Details
                         </Button>
                         {isConnected && userProfile && event.creatorAddress.toLowerCase() === userProfile.address.toLowerCase() && event.status === 'upcoming' ? (
                           curatedEvents.has(event.contractEventId) ? (
                             <Button 
                               size="sm" 
-                              className="bg-green-600 text-white hover:bg-green-700 flex-1" 
+                              className="bg-green-600 text-white hover:bg-green-700 flex-1 min-w-0 text-xs sm:text-sm" 
                               disabled
                             >
-                              <Check className="h-4 w-4 mr-2" />
-                              Curated
+                              <Check className="h-4 w-4 mr-1 sm:mr-2 flex-shrink-0" />
+                              <span className="truncate">Curated</span>
                             </Button>
                           ) : (
                             <Button 
                               size="sm" 
-                              className="bg-primary text-primary-foreground hover:bg-primary/90 flex-1" 
+                              className="bg-primary text-primary-foreground hover:bg-primary/90 flex-1 min-w-0 text-xs sm:text-sm" 
                               onClick={() => router.push(`/kiosk/${event.contractEventId}`)}
                             >
-                              Curate
+                              <span className="truncate">Curate</span>
                             </Button>
                           )
                         ) : (
                           <Button 
                             size="sm" 
-                            className={`flex-1 ${
+                            className={`flex-1 min-w-0 text-xs sm:text-sm ${
                               userOwnedTickets.has(event.contractEventId) 
                                 ? "bg-green-600 text-white hover:bg-green-700" 
                                 : "bg-primary text-primary-foreground hover:bg-primary/90"
@@ -610,15 +610,19 @@ export default function TicketKiosk() {
                           >
                             {purchasingTickets.has(event.contractEventId) ? (
                               <>
-                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                Purchasing...
+                                <Loader2 className="h-4 w-4 animate-spin mr-1 sm:mr-2 flex-shrink-0" />
+                                <span className="truncate">Purchasing...</span>
                               </>
                             ) : userOwnedTickets.has(event.contractEventId) ? (
                               <>
-                                <Check className="h-4 w-4 mr-2" />
-                                Bought!
+                                <Check className="h-4 w-4 mr-1 sm:mr-2 flex-shrink-0" />
+                                <span className="truncate">Bought!</span>
                               </>
-                            ) : event.participants >= event.maxParticipants ? 'Sold Out' : 'Buy Ticket'}
+                            ) : (
+                              <span className="truncate">
+                                {event.participants >= event.maxParticipants ? 'Sold Out' : 'Buy Ticket'}
+                              </span>
+                            )}
                           </Button>
                         )}
                       </CardFooter>

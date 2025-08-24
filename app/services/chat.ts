@@ -1,4 +1,5 @@
-import { xmtpChatService, type XMTPMessage } from "./xmtp"
+"use client"
+
 import { loadUserProfile } from "./profile"
 
 // Types for chat messages - matches EventChat component interface
@@ -20,26 +21,27 @@ export interface SystemEvent {
 }
 
 /**
- * Enhanced Chat Service with XMTP Integration
+ * Simple Chat Service (XMTP removed)
  * 
- * This service combines XMTP for real wallet-based messaging with system messages
- * for event activities (tips, joins, etc.). It does NOT handle user verification -
- * that's already done by the room access control.
+ * This service provides basic chat functionality with system messages
+ * for event activities (tips, joins, etc.). Real-time messaging via XMTP 
+ * has been removed to simplify the build.
  */
 export class EventChatService {
   private messageCallbacks = new Map<string, (message: ChatMessage) => void>()
   private messageIdCounter = 1
+  private eventMessages = new Map<string, ChatMessage[]>()
 
   constructor() {
-    console.log('CHAT: Event chat service initialized with XMTP integration')
+    console.log('CHAT: Event chat service initialized')
   }
 
   /**
-   * Initialize chat for an event room
+   * Initialize chat for an event room (simplified)
    * @param eventId - The event ID
-   * @param walletClient - User's wallet client (from wagmi)
+   * @param walletClient - User's wallet client (unused in simplified version)
    * @param userAddress - User's wallet address
-   * @param participantAddresses - List of all participants (creator + ticket holders)
+   * @param participantAddresses - List of all participants (unused in simplified version)
    * @param onMessage - Callback for new messages
    */
   async initializeEventChat(
@@ -49,31 +51,21 @@ export class EventChatService {
     participantAddresses: string[],
     onMessage: (message: ChatMessage) => void
   ): Promise<ChatMessage[]> {
-    console.log('CHAT: Initializing event chat for event:', eventId)
-    console.log('CHAT: Participants:', participantAddresses.length)
+    console.log('CHAT: Initializing simplified chat for event:', eventId)
     
     try {
       // Store message callback
       this.messageCallbacks.set(eventId, onMessage)
       
-      // Initialize XMTP client
-      await xmtpChatService.initializeClient(walletClient, userAddress)
+      // Initialize empty message history for this event
+      if (!this.eventMessages.has(eventId)) {
+        this.eventMessages.set(eventId, [])
+      }
       
-      // Set up message callback
-      xmtpChatService.setMessageCallback((xmtpMessage: XMTPMessage) => {
-        const chatMessage = this.formatXMTPMessage(xmtpMessage)
-        this.handleNewMessage(eventId, chatMessage)
-      })
+      const history = this.eventMessages.get(eventId) || []
       
-      // Get or create conversation for this event
-      await xmtpChatService.getEventConversation(eventId, participantAddresses)
-      
-      // Load message history
-      const history = await xmtpChatService.loadMessageHistory()
-      const formattedHistory = history.map(msg => this.formatXMTPMessage(msg))
-      
-      console.log('CHAT: Event chat initialized successfully with', formattedHistory.length, 'historical messages')
-      return formattedHistory
+      console.log('CHAT: Simplified chat initialized with', history.length, 'messages')
+      return history
       
     } catch (error) {
       console.error('CHAT: Error initializing event chat:', error)
@@ -82,19 +74,16 @@ export class EventChatService {
   }
 
   /**
-   * Send a message via XMTP
+   * Send a message (simplified - no XMTP)
    */
   async sendMessage(content: string): Promise<void> {
-    try {
-      await xmtpChatService.sendMessage(content)
-    } catch (error) {
-      console.error('CHAT: Error sending message:', error)
-      throw error
-    }
+    console.log('CHAT: Message sending disabled (XMTP removed)')
+    // In simplified version, we don't actually send messages
+    // This could be extended to use a different messaging system
   }
 
   /**
-   * Add a system message (not sent via XMTP)
+   * Add a system message
    */
   addSystemMessage(eventId: string, message: string, type?: "tip" | "join" | "reserve"): void {
     const systemMessage: ChatMessage = {
@@ -135,23 +124,15 @@ export class EventChatService {
   }
 
   /**
-   * Format XMTP message to chat message
-   */
-  private formatXMTPMessage(xmtpMessage: XMTPMessage): ChatMessage {
-    return {
-      id: this.messageIdCounter++,
-      user: xmtpMessage.sender,
-      message: xmtpMessage.content,
-      timestamp: new Date(xmtpMessage.timestamp).toISOString(),
-      isSystem: false,
-      isTip: false
-    }
-  }
-
-  /**
    * Handle new message and call callback
    */
   private handleNewMessage(eventId: string, message: ChatMessage): void {
+    // Store message in event history
+    const messages = this.eventMessages.get(eventId) || []
+    messages.push(message)
+    this.eventMessages.set(eventId, messages)
+    
+    // Call callback if available
     const callback = this.messageCallbacks.get(eventId)
     if (callback) {
       callback(message)
@@ -182,14 +163,14 @@ export class EventChatService {
     console.log('CHAT: Disconnecting from event chat:', eventId)
     
     this.messageCallbacks.delete(eventId)
-    await xmtpChatService.disconnect()
+    // Don't delete message history - keep it for re-connections
   }
 
   /**
-   * Check if XMTP is ready
+   * Check if chat is ready (always true in simplified version)
    */
   isReady(): boolean {
-    return xmtpChatService.isReady()
+    return true
   }
 }
 

@@ -20,7 +20,7 @@ const RELIABLE_VIDEOS = {
   "poetry-slam": "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/2955-360-xLAcPRAAEvhA4gJV8bHULqhHaftej1.mp4",
   "improv": "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/29983-360-yI0kgZpZ7Bj7QUbZQGPxKmmKefwLav.mp4",
   "live-streaming": "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/443-360-kRKFI1NVe7SieGyQKFPiKQin2dY8LV.mp4",
-  "creative-workshop":
+  "podcasting":
     "https://yddhyb5b6wwp3cqi.public.blob.vercel-storage.com/40367-360-LovhxrX7kcdSINyPAu7xLgWlCNmTBJ.mp4",
 }
 
@@ -34,7 +34,7 @@ type Category =
   | "poetry-slam"
   | "improv"
   | "live-streaming"
-  | "creative-workshop"
+  | "podcasting"
 
 // Define destination paths for each category
 const CATEGORY_DESTINATIONS = {
@@ -43,7 +43,7 @@ const CATEGORY_DESTINATIONS = {
   "poetry-slam": "/kiosk?category=poetry-slam",
   "improv": "/kiosk?category=improv",
   "live-streaming": "/kiosk?category=live-streaming",
-  "creative-workshop": "/kiosk?category=creative-workshop",
+  "podcasting": "/kiosk?category=podcasting",
 }
 
 // Memoize the component to prevent unnecessary re-renders
@@ -152,10 +152,10 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
           "Artist at Work: Studio Session",
           "Canvas to Creation: Live Art",
         ],
-        "creative-workshop": [
+        "podcasting": [
           "Digital Art Masterclass",
           "Creative Process Revealed",
-          "Workshop: From Concept to Creation",
+          "Podcast: From Concept to Creation",
         ],
       }
 
@@ -328,10 +328,10 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
           "Artist at Work: Studio Session",
           "Canvas to Creation: Live Art",
         ],
-        "creative-workshop": [
+        "podcasting": [
           "Digital Art Masterclass",
           "Creative Process Revealed",
-          "Workshop: From Concept to Creation",
+          "Podcast: From Concept to Creation",
         ],
       }
 
@@ -628,16 +628,16 @@ export const TvPlayer = memo(function TvPlayer({ onConnect }: { onConnect: (redi
               <span className="sr-only">Streaming</span>
             </TabsTrigger>
             <TabsTrigger
-              value="creative-workshop"
-              onClick={() => setSelectedCategory("creative-workshop")}
+              value="podcasting"
+              onClick={() => setSelectedCategory("podcasting")}
               className="data-[state=active]:bg-primary/10 py-2 px-1 sm:px-2 flex justify-center items-center h-12"
             >
               <ArtCategoryIcon
-                category="creative-workshop"
+                category="podcasting"
                 size="sm"
-                className={selectedCategory === "creative-workshop" ? "text-primary" : "text-muted-foreground"}
+                className={selectedCategory === "podcasting" ? "text-primary" : "text-muted-foreground"}
               />
-              <span className="sr-only">Workshop</span>
+              <span className="sr-only">Podcasting</span>
             </TabsTrigger>
           </TabsList>
         </Tabs>

@@ -461,7 +461,7 @@ function LoginModal({ isOpen, onClose, redirectPath }: LoginModalProps) {
                     "poetry-slam",
                     "improv",
                     "live-streaming",
-                    "creative-workshop",
+                    "podcasting",
                   ].map((category) => (
                     <div
                       key={category}

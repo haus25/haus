@@ -335,7 +335,7 @@ export default function Home() {
                 { name: "poetry slam", icon: "poetry-slam" },
                 { name: "improv", icon: "improv" },
                 { name: "live streaming", icon: "live-streaming" },
-                { name: "creative workshop", icon: "creative-workshop" },
+                { name: "podcasting", icon: "podcasting" },
               ].map((category, index) => (
                 <HandDrawnContainer
                   key={category.name}

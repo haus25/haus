@@ -170,10 +170,10 @@ export default function EventRoom() {
     verifyUserAccess()
   }, [eventId, userProfile, walletClient, isConnected, router])
 
-  // Initialize XMTP chat when user has access
+  // Initialize chat when user has access
   useEffect(() => {
     const initializeChat = async () => {
-      if (!eventId || !userProfile?.address || !walletClient || !streamStatus.hasAccess || participantAddresses.length === 0) {
+      if (!eventId || !userProfile?.address || !streamStatus.hasAccess) {
         return
       }
 
@@ -182,9 +182,9 @@ export default function EventRoom() {
       }
 
       try {
-        console.log('ROOM: Initializing XMTP chat for event:', eventId)
+        console.log('ROOM: Initializing simplified chat for event:', eventId)
         
-        // Initialize chat with XMTP
+        // Initialize chat (simplified version without XMTP)
         const history = await eventChatService.initializeEventChat(
           eventId,
           walletClient,
@@ -202,7 +202,7 @@ export default function EventRoom() {
         // Add system message for user joining
         eventChatService.addUserJoinedMessage(eventId, userProfile.address)
         
-        console.log('ROOM: Chat initialized successfully with', history.length, 'messages')
+        console.log('ROOM: Simplified chat initialized with', history.length, 'messages')
         
       } catch (error) {
         console.error('ROOM: Error initializing chat:', error)
@@ -212,7 +212,7 @@ export default function EventRoom() {
     }
 
     initializeChat()
-  }, [eventId, userProfile, walletClient, streamStatus.hasAccess, participantAddresses, isChatInitialized])
+  }, [eventId, userProfile, streamStatus.hasAccess, isChatInitialized])
 
   // Cleanup chat on unmount
   useEffect(() => {
@@ -858,9 +858,6 @@ export default function EventRoom() {
                   <CardTitle className="text-sm font-medium flex items-center gap-2 text-card-foreground">
                     <MessageSquare className="h-4 w-4" />
                     Live Chat
-                    {isChatInitialized && (
-                      <Badge variant="secondary" className="text-xs">XMTP</Badge>
-                    )}
                     {!isChatInitialized && streamStatus.hasAccess && (
                       <Loader2 className="h-3 w-3 animate-spin" />
                     )}

@@ -33,7 +33,7 @@ type Category =
   | "poetry-slam"
   | "improv"
   | "live-streaming"
-  | "creative-workshop"
+  | "podcasting"
 type SaleType = "cumulative-tips" | "blind-auction" | "quadratic-tipping"
 type Duration = 15 | 30 | 60
 
@@ -279,7 +279,7 @@ export default function EventFactory() {
                 { id: "poetry-slam", label: "Poetry Slam" },
                 { id: "improv", label: "Improv" },
                 { id: "live-streaming", label: "Live Streaming" },
-                { id: "creative-workshop", label: "Creative Workshop" },
+                { id: "podcasting", label: "Podcasting" },
               ].map((category) => (
                 <div
                   key={category.id}
