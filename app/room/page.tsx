@@ -15,6 +15,7 @@ import { EventChat } from "../components/eventChat"
 import { useAuth } from "../contexts/auth"
 import { createEventFactoryService } from "../services/create"
 import { streamingService } from "../services/streaming"
+import { useLighthouseService, type EventStorageStatus } from "../services/lighthouse"
 import { useWalletClient } from "wagmi"
 import { 
   Video, 
@@ -89,6 +90,10 @@ export default function EventRoom() {
   // Tipping data
   const [currentTippedAmount, setCurrentTippedAmount] = useState("0")
   const [reserveProgress, setReserveProgress] = useState(0)
+  
+  // Lighthouse storage tracking
+  const lighthouseService = useLighthouseService()
+  const [storageStatus, setStorageStatus] = useState<EventStorageStatus | null>(null)
 
   // Initialize from URL parameters - prioritize path parameter format
   useEffect(() => {
@@ -173,7 +178,7 @@ export default function EventRoom() {
   // Initialize chat when user has access
   useEffect(() => {
     const initializeChat = async () => {
-      if (!eventId || !userProfile?.address || !streamStatus.hasAccess) {
+      if (!eventId || !userProfile?.address || !streamStatus.hasAccess || !eventData) {
         return
       }
 
@@ -182,14 +187,17 @@ export default function EventRoom() {
       }
 
       try {
-        console.log('ROOM: Initializing simplified chat for event:', eventId)
+        console.log('ROOM: Initializing WebSocket chat for event:', eventId)
         
-        // Initialize chat (simplified version without XMTP)
+        // Initialize chat with WebSocket connection
         const history = await eventChatService.initializeEventChat(
           eventId,
           walletClient,
           userProfile.address,
-          participantAddresses,
+          isCreator,
+          eventData.startDate,
+          eventData.startDate + (eventData.eventDuration * 1000),
+          eventData.creatorAddress,
           (newMessage: ChatMessage) => {
             setChatMessages(prev => [...prev, newMessage])
           }
@@ -199,10 +207,7 @@ export default function EventRoom() {
         setChatMessages(history)
         setIsChatInitialized(true)
         
-        // Add system message for user joining
-        eventChatService.addUserJoinedMessage(eventId, userProfile.address)
-        
-        console.log('ROOM: Simplified chat initialized with', history.length, 'messages')
+        console.log('ROOM: WebSocket chat initialized')
         
       } catch (error) {
         console.error('ROOM: Error initializing chat:', error)
@@ -212,7 +217,7 @@ export default function EventRoom() {
     }
 
     initializeChat()
-  }, [eventId, userProfile, streamStatus.hasAccess, isChatInitialized])
+  }, [eventId, userProfile, streamStatus.hasAccess, isChatInitialized, eventData, isCreator])
 
   // Cleanup chat on unmount
   useEffect(() => {
@@ -364,8 +369,8 @@ export default function EventRoom() {
     if (eventData && userProfile) {
       setChatMessages([
         {
-          id: 1,
-          user: "system",
+          id: Date.now(),
+          user: "System",
           message: `Welcome to ${eventData.title || `Event #${eventId}`}!`,
           timestamp: new Date().toISOString(),
           isSystem: true
@@ -383,6 +388,25 @@ export default function EventRoom() {
     setStreamStatus(status)
     console.log('EVENT_ROOM: Stream status updated:', status)
   }, [])
+
+  // Track storage status for creators
+  useEffect(() => {
+    if (!eventId || !isCreator) return
+
+    const checkStorageStatus = async () => {
+      try {
+        const status = await lighthouseService.getEventStorageStatus(eventId)
+        setStorageStatus(status)
+      } catch (error) {
+        console.error('Error checking storage status:', error)
+      }
+    }
+
+    checkStorageStatus()
+    const interval = setInterval(checkStorageStatus, 15000) // Check every 15 seconds
+    
+    return () => clearInterval(interval)
+  }, [eventId, isCreator, lighthouseService])
 
   // Handle chat message sending
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -879,9 +903,46 @@ export default function EventRoom() {
               <Card className="border-border bg-card">
                 <CardContent className="p-4 text-sm space-y-2">
                   {isCreator ? (
-                    <div className="flex items-center gap-2">
-                      <Crown className="h-4 w-4 text-primary" />
-                      <span className="text-card-foreground">You are the event creator</span>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Crown className="h-4 w-4 text-primary" />
+                        <span className="text-card-foreground">You are the event creator</span>
+                      </div>
+                      
+                      {/* Lighthouse Storage Status */}
+                      {storageStatus && (
+                        <div className="pt-2 border-t border-border">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-medium">Video Storage:</span>
+                            <Badge 
+                              variant={storageStatus.status === 'active' ? 'default' : 
+                                      storageStatus.status === 'completed' ? 'secondary' : 'destructive'}
+                              className="text-xs"
+                            >
+                              {storageStatus.status}
+                            </Badge>
+                          </div>
+                          
+                          {storageStatus.status === 'active' && (
+                            <div className="mt-1 space-y-1">
+                              <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Chunks stored:</span>
+                                <span>{storageStatus.uploadedChunks}</span>
+                              </div>
+                              <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Total size:</span>
+                                <span>{storageStatus.totalSizeMB.toFixed(1)} MB</span>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {storageStatus.status === 'completed' && (
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              Final: {storageStatus.totalChunks} chunks ({storageStatus.totalSizeMB.toFixed(1)} MB)
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">

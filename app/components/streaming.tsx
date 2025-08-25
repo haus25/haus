@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { streamingService, type StreamSession } from '../services/streaming'
 import { createTicketService } from '../services/tickets'
+import { useLighthouseService, useLighthousePolling } from '../services/lighthouse'
 import { useWalletClient } from 'wagmi'
 import { useAuth } from '../contexts/auth'
 import { toast } from 'sonner'
@@ -49,6 +50,10 @@ export const Streaming: React.FC<StreamingProps> = ({
 }) => {
   const { userProfile } = useAuth()
   const { data: walletClient } = useWalletClient()
+  
+  // Lighthouse storage integration
+  const lighthouseService = useLighthouseService()
+  const { startPolling, stopPolling } = useLighthousePolling()
   
   const videoRef = useRef<HTMLVideoElement>(null)
   const [streamSession, setStreamSession] = useState<StreamSession | null>(null)
@@ -181,7 +186,27 @@ export const Streaming: React.FC<StreamingProps> = ({
         }
       }
       
-      toast.success('Stream started successfully!')
+      // Start Lighthouse storage for this event
+      if (userProfile?.address) {
+        console.log('LIGHTHOUSE: Starting video storage for event:', eventId)
+        try {
+          const storageStarted = await lighthouseService.startLivestreamStorage(eventId, userProfile.address)
+          if (storageStarted) {
+            console.log('LIGHTHOUSE: Video storage started successfully')
+            // Start polling for storage status
+            startPolling()
+            toast.success('Stream and storage started successfully!')
+          } else {
+            console.warn('LIGHTHOUSE: Failed to start video storage')
+            toast.success('Stream started (storage unavailable)')
+          }
+        } catch (storageError) {
+          console.error('LIGHTHOUSE: Storage startup error:', storageError)
+          toast.success('Stream started (storage unavailable)')
+        }
+      } else {
+        toast.success('Stream started successfully!')
+      }
       
       console.log('STREAMING: Stream started:', session)
 
@@ -201,6 +226,22 @@ export const Streaming: React.FC<StreamingProps> = ({
     try {
       setIsConnecting(true)
       
+      // Stop Lighthouse storage first
+      console.log('LIGHTHOUSE: Stopping video storage for event:', eventId)
+      try {
+        const storageStopped = await lighthouseService.stopLivestreamStorage(eventId)
+        if (storageStopped) {
+          console.log('LIGHTHOUSE: Video storage stopped successfully')
+          // Stop polling
+          stopPolling()
+        } else {
+          console.warn('LIGHTHOUSE: Failed to stop video storage properly')
+        }
+      } catch (storageError) {
+        console.error('LIGHTHOUSE: Storage stop error:', storageError)
+      }
+      
+      // Then stop the stream
       await streamingService.stopStreaming()
       
       setStreamSession(null)
@@ -212,7 +253,7 @@ export const Streaming: React.FC<StreamingProps> = ({
         videoRef.current.srcObject = null
       }
       
-      toast.success('Stream stopped')
+      toast.success('Stream and storage stopped')
       console.log('STREAMING: Stream stopped')
 
     } catch (error) {

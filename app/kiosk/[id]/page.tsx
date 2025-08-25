@@ -1131,7 +1131,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                               <Megaphone className="h-6 w-6 text-green-600" />
                             </div>
                             <CardTitle className="text-lg">Promoter</CardTitle>
-                            <div className="text-2xl font-bold text-primary">3%</div>
+                            <div className="text-2xl font-bold text-primary">7%</div>
                           </CardHeader>
                           <CardContent className="text-center space-y-2">
                             <ul className="text-sm space-y-1 text-muted-foreground">
@@ -1157,7 +1157,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                               <PlayCircle className="h-6 w-6 text-purple-600" />
                             </div>
                             <CardTitle className="text-lg">Producer</CardTitle>
-                            <div className="text-2xl font-bold text-primary">4%</div>
+                            <div className="text-2xl font-bold text-primary">10%</div>
                           </CardHeader>
                           <CardContent className="text-center space-y-2">
                             <ul className="text-sm space-y-1 text-muted-foreground">
