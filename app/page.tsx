@@ -63,7 +63,7 @@ export default function Home() {
       <main className="flex-1">
         {/* Hero Section - Underground Revolution */}
         <UndergroundSection
-          quote="the stage eats the performer who feeds the audience"
+          quote="this is not funny"
           has3D={false}
           className="py-20 md:py-28"
         >
@@ -138,7 +138,7 @@ export default function Home() {
 
         {/* Real-Time Assets Section - Underground Manifesto */}
         <UndergroundSection
-          quote="chaos is just order waiting to be discovered"
+          quote="be the _chaos_ you want to see in the world"
           className="py-16 md:py-24 bg-bauhaus-concrete text-bauhaus-white"
         >
           <div className="container px-4 md:px-6">
@@ -208,7 +208,7 @@ export default function Home() {
 
         {/* Web3 Innovation Section - Underground Tech */}
         <UndergroundSection
-          quote="authentic voice breaks through digital noise"
+          quote="authenticity is an act of civil disobedience"
           className="py-16 md:py-24"
         >
           <div className="container px-4 md:px-6">
@@ -262,7 +262,7 @@ export default function Home() {
 
         {/* Features Section - Underground Actions */}
         <UndergroundSection
-          quote="improvisation is conversation with the unknown"
+          quote="natural born tippers"
           className="py-16 md:py-24"
         >
           <div className="container px-4 md:px-6">
@@ -316,7 +316,7 @@ export default function Home() {
         {/* Categories Section - Art Forms Underground */}
         <UndergroundSection
           title="art forms"
-          quote="boundaries exist only to be artistically destroyed"
+          quote="reality - is yet to be performed"
           className="py-12 md:py-20 bg-bauhaus-chalk"
           has3D={false}
         >

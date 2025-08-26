@@ -312,119 +312,154 @@ export class TicketService {
         return []
       }
 
-      const events: OnChainEventData[] = []
-      
-      for (let i = 0; i < Number(totalEvents); i++) {
-        try {
-          const eventData = await publicClient.readContract({
-            address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
-            abi: EVENT_FACTORY_ABI,
-            functionName: 'getEvent',
-            args: [BigInt(i)],
-          }) as any
+      const eventCount = Number(totalEvents)
+      console.log(`TICKETS: Found ${eventCount} events, fetching data in parallel...`)
 
-          // Get ticket kiosk data  
-          const kioskData = await this.getTicketKioskData(eventData.KioskAddress)
+      // Step 1: Fetch all basic event data in parallel
+      const eventDataPromises = Array.from({ length: eventCount }, (_, i) =>
+        publicClient.readContract({
+          address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+          abi: EVENT_FACTORY_ABI,
+          functionName: 'getEvent',
+          args: [BigInt(i)],
+        }).catch((error: any) => {
+          console.error(`TICKETS: Error fetching event ${i}:`, error)
+          return null
+        })
+      )
+
+      // Step 2: Fetch all tokenURIs in parallel
+      const tokenURIPromises = Array.from({ length: eventCount }, (_, i) =>
+        publicClient.readContract({
+          address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+          abi: EVENT_FACTORY_ABI,
+          functionName: 'tokenURI',
+          args: [BigInt(i)],
+        }).catch((error: any) => {
+          console.warn(`Failed to get tokenURI for event ${i}, will use metadataURI fallback`)
+          return null
+        })
+      )
+
+      // Execute both sets of calls in parallel
+      const [eventDataResults, tokenURIResults] = await Promise.all([
+        Promise.all(eventDataPromises),
+        Promise.all(tokenURIPromises)
+      ])
+
+      // Step 3: For valid events, fetch kiosk data in parallel
+      const validEvents = eventDataResults
+        .map((eventData, i) => ({ eventData, index: i, tokenURI: tokenURIResults[i] }))
+        .filter(({ eventData }) => eventData !== null)
+
+      const kioskDataPromises = validEvents.map(({ eventData }) =>
+        this.getTicketKioskData(eventData.KioskAddress).catch(error => {
+          console.error('TICKETS: Error fetching kiosk data:', error)
+          return {
+            eventId: 0,
+            totalTickets: 0,
+            soldTickets: 0,
+            remainingTickets: 0,
+            price: 0,
+            artCategory: 'standup-comedy',
+          }
+        })
+      )
+
+      const kioskDataResults = await Promise.all(kioskDataPromises)
+
+      // Step 4: Fetch all metadata in parallel
+      const metadataPromises = validEvents.map(async ({ eventData, tokenURI }, idx) => {
+        try {
+          let finalTokenURI = tokenURI
           
-          // Get the latest tokenURI (contains the most up-to-date metadata)
-          let tokenURI = ''
-          try {
-            tokenURI = await publicClient.readContract({
-              address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
-              abi: EVENT_FACTORY_ABI,
-              functionName: 'tokenURI',
-              args: [BigInt(i)],
-            }) as string
-          } catch (error) {
-            console.warn(`Failed to get tokenURI for event ${i}, falling back to metadataURI`)
-            // Validate metadataURI before using it as fallback
-            if (eventData.metadataURI && 
-                !eventData.metadataURI.includes('TEST') && 
-                !eventData.metadataURI.includes('FIXED')) {
-              tokenURI = eventData.metadataURI
-            } else {
-              console.warn(`Invalid metadataURI detected for event ${i}: ${eventData.metadataURI}`)
-              tokenURI = '' // This will trigger fallback metadata
-            }
+          // Fallback to metadataURI if tokenURI failed
+          if (!finalTokenURI && eventData.metadataURI && 
+              !eventData.metadataURI.includes('TEST') && 
+              !eventData.metadataURI.includes('FIXED')) {
+            finalTokenURI = eventData.metadataURI
           }
 
-          // Parse metadata using tokenURI (most up-to-date)
-          let metadata: any = {}
-          try {
-            if (tokenURI) {
-              if (tokenURI.startsWith('ipfs://')) {
-                const ipfsHash = tokenURI.slice(7)
-                // Validate IPFS hash format (basic check for valid characters and length)
-                if (ipfsHash && ipfsHash.match(/^[A-Za-z0-9]{44,59}$/) && !ipfsHash.includes('TEST') && !ipfsHash.includes('FIXED')) {
-                  const pinataGatewayUrl = `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${ipfsHash}`
-                  const response = await fetch(pinataGatewayUrl)
-                  if (response.ok) {
-                    metadata = await response.json()
-                  } else {
-                    console.warn(`Failed to fetch metadata from ${pinataGatewayUrl}: ${response.status}`)
-                  }
-                } else {
-                  console.warn(`Invalid IPFS hash detected: ${ipfsHash}`)
-                }
-              } else if (tokenURI.startsWith('http')) {
-                const response = await fetch(tokenURI)
-                if (response.ok) {
-                  metadata = await response.json()
-                }
-              } else {
-                metadata = JSON.parse(tokenURI)
-              }
-            }
-          } catch (error) {
-            console.warn(`Failed to parse metadata for event ${i}:`, error)
-            metadata = {
-              name: `Event #${i}`,
+          if (!finalTokenURI) {
+            return {
+              name: `Event #${validEvents[idx].index}`,
               description: 'Event description not available',
               image: '/placeholder.svg'
             }
           }
 
-          // Determine status
-          const now = Date.now()
-          const startTime = Number(eventData.startDate) * 1000
-          const endTime = startTime + (Number(eventData.eventDuration) * 60 * 1000)
-          
-          let status: 'upcoming' | 'live' | 'completed' = 'upcoming'
-          if (now >= startTime && now <= endTime) {
-            status = 'live'
-          } else if (now > endTime) {
-            status = 'completed'
+          if (finalTokenURI.startsWith('ipfs://')) {
+            const ipfsHash = finalTokenURI.slice(7)
+            // Validate IPFS hash format
+            if (ipfsHash && ipfsHash.match(/^[A-Za-z0-9]{44,59}$/) && !ipfsHash.includes('TEST') && !ipfsHash.includes('FIXED')) {
+              const pinataGatewayUrl = `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${ipfsHash}`
+              const response = await fetch(pinataGatewayUrl)
+              if (response.ok) {
+                return await response.json()
+              }
+            }
+          } else if (finalTokenURI.startsWith('http')) {
+            const response = await fetch(finalTokenURI)
+            if (response.ok) {
+              return await response.json()
+            }
+          } else {
+            return JSON.parse(finalTokenURI)
           }
-
-          const event: OnChainEventData = {
-            id: i.toString(),
-            contractEventId: i,
-            title: metadata.name || metadata.title || `Event #${i}`,
-            description: metadata.description || 'Event description not available',
-            creator: eventData.creator,
-            creatorAddress: eventData.creator,
-            category: eventData.artCategory || 'standup-comedy',
-            date: new Date(startTime).toISOString(),
-            duration: Number(eventData.eventDuration),
-            reservePrice: Number(eventData.reservePrice) / 1e18,
-            ticketPrice: kioskData.price / 1e18,
-            maxParticipants: kioskData.totalTickets,
-            participants: kioskData.soldTickets,
-            image: convertIPFSUrl(metadata.image || '/placeholder.svg'),
-            status,
-            finalized: eventData.finalized,
-            ticketKioskAddress: eventData.KioskAddress,
-            eventMetadataURI: eventData.metadataURI
-          }
-
-          events.push(event)
-
         } catch (error) {
-          console.error(`TICKETS: Error processing event ${i}:`, error)
+          console.warn(`Failed to parse metadata for event ${validEvents[idx].index}:`, error)
         }
-      }
+        
+        return {
+          name: `Event #${validEvents[idx].index}`,
+          description: 'Event description not available',
+          image: '/placeholder.svg'
+        }
+      })
 
-      return events
+      const metadataResults = await Promise.all(metadataPromises)
+
+      // Step 5: Combine all data into final events array
+      const events: OnChainEventData[] = validEvents.map(({ eventData, index }, idx) => {
+        const kioskData = kioskDataResults[idx]
+        const metadata = metadataResults[idx]
+
+        // Determine status
+        const now = Date.now()
+        const startTime = Number(eventData.startDate) * 1000
+        const endTime = startTime + (Number(eventData.eventDuration) * 60 * 1000)
+        
+        let status: 'upcoming' | 'live' | 'completed' = 'upcoming'
+        if (now >= startTime && now <= endTime) {
+          status = 'live'
+        } else if (now > endTime) {
+          status = 'completed'
+        }
+
+        return {
+          id: index.toString(),
+          contractEventId: index,
+          title: metadata.name || metadata.title || `Event #${index}`,
+          description: metadata.description || 'Event description not available',
+          creator: eventData.creator,
+          creatorAddress: eventData.creator,
+          category: eventData.artCategory || 'standup-comedy',
+          date: new Date(startTime).toISOString(),
+          duration: Number(eventData.eventDuration),
+          reservePrice: Number(eventData.reservePrice) / 1e18,
+          ticketPrice: kioskData.price / 1e18,
+          maxParticipants: kioskData.totalTickets,
+          participants: kioskData.soldTickets,
+          image: convertIPFSUrl(metadata.image || '/placeholder.svg'),
+          status,
+          finalized: eventData.finalized,
+          ticketKioskAddress: eventData.KioskAddress,
+          eventMetadataURI: eventData.metadataURI
+        }
+      })
+      
+      console.log('TICKETS: Successfully fetched', events.length, 'events from blockchain in parallel')
+      return events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     } catch (error) {
       console.error('TICKETS: Error fetching events:', error)
       throw error
@@ -456,17 +491,19 @@ export class TicketService {
     try {
       const publicClient = this.getPublicClient()
       
-      const salesInfo = await publicClient.readContract({
-        address: kioskAddress as `0x${string}`,
-        abi: TicketKioskABI,
-        functionName: 'getSalesInfo',
-      }) as any
-
-      const eventId = await publicClient.readContract({
-        address: kioskAddress as `0x${string}`,
-        abi: TicketKioskABI,
-        functionName: 'eventId',
-      }) as bigint
+      // Parallelize both calls to the kiosk contract
+      const [salesInfo, eventId] = await Promise.all([
+        publicClient.readContract({
+          address: kioskAddress as `0x${string}`,
+          abi: TicketKioskABI,
+          functionName: 'getSalesInfo',
+        }) as Promise<any>,
+        publicClient.readContract({
+          address: kioskAddress as `0x${string}`,
+          abi: TicketKioskABI,
+          functionName: 'eventId',
+        }) as Promise<bigint>
+      ])
 
       return {
         eventId: Number(eventId),
