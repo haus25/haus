@@ -45,7 +45,13 @@ import {
   getAspectIterations,
   requestAspectRefinement,
   acceptCurationProposal,
-  type CurationResult
+  type CurationResult,
+  // New promoter flow functions
+  generatePromoterStrategy,
+  refinePromoterStrategy,
+  acceptPromoterStrategy,
+  generateSocialContent,
+  refineSocialContent
 } from "../../services/curation"
 
 interface EventDetailPageProps {
@@ -80,6 +86,19 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     schedule: 0,
     pricing: 0
   })
+
+  // New promoter flow state
+  const [currentTab, setCurrentTab] = useState<'details' | 'strategy' | 'content'>('details')
+  const [promoterStrategy, setPromoterStrategy] = useState<any>(null)
+  const [isGeneratingStrategy, setIsGeneratingStrategy] = useState(false)
+  const [isAcceptingStrategy, setIsAcceptingStrategy] = useState(false)
+  const [strategyAccepted, setStrategyAccepted] = useState(false)
+  const [socialContent, setSocialContent] = useState<Record<string, any>>({})
+  const [isGeneratingContent, setIsGeneratingContent] = useState<Record<string, boolean>>({})
+  const [contentIterations, setContentIterations] = useState<Record<string, number>>({})
+  const [expandedStrategyDiscussion, setExpandedStrategyDiscussion] = useState<string | null>(null)
+  const [strategyDiscussionMessages, setStrategyDiscussionMessages] = useState<Record<string, Array<{role: string, content: string}>>>({})
+  const [isDiscussingStrategy, setIsDiscussingStrategy] = useState(false)
 
   useEffect(() => {
     const loadEventData = async () => {
@@ -469,6 +488,164 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
 
   const isCreator = isConnected && userProfile && event && event.creatorAddress.toLowerCase() === userProfile.address.toLowerCase()
   const canShowCuration = isCreator && event?.status === 'upcoming'
+
+  // NEW PROMOTER FLOW HANDLERS
+
+  const handleGenerateStrategy = async () => {
+    if (!isConnected || !userProfile || !event) {
+      toast.error("Please connect your wallet")
+      return
+    }
+
+    setIsGeneratingStrategy(true)
+    
+    try {
+      toast.loading("🎯 Generating promotional strategy with AI agents...")
+      
+      const eventData = {
+        eventId: params.id,
+        title: event.title,
+        category: event.category,
+        description: event.description,
+        duration: event.duration,
+        currentSchedule: {
+          date: new Date(event.date).getTime(),
+          time: new Date(event.date).toLocaleTimeString()
+        },
+        currentPricing: {
+          ticketPrice: event.ticketPrice,
+          reservePrice: event.reservePrice
+        }
+      }
+      
+      const strategyResult = await generatePromoterStrategy(
+        params.id,
+        userProfile.address,
+        eventData
+      )
+      
+      setPromoterStrategy(strategyResult.strategy)
+      
+      toast.dismiss()
+      toast.success("🎯 Promotional strategy generated successfully!")
+      
+    } catch (error: any) {
+      console.error("STRATEGY_GENERATION: Error:", error)
+      toast.dismiss()
+      toast.error(`Failed to generate strategy: ${error.message || 'Unknown error'}`)
+    } finally {
+      setIsGeneratingStrategy(false)
+    }
+  }
+
+  const handleAcceptStrategy = async () => {
+    if (!promoterStrategy || !userProfile?.address) {
+      toast.error("No strategy to accept or wallet not connected")
+      return
+    }
+
+    setIsAcceptingStrategy(true)
+    
+    try {
+      toast.loading("✅ Accepting strategy...")
+      
+      const result = await acceptPromoterStrategy(
+        params.id,
+        userProfile.address,
+        promoterStrategy
+      )
+      
+      setStrategyAccepted(true)
+      toast.dismiss()
+      toast.success("✅ Strategy accepted! Content tab is now available.")
+      
+    } catch (error: any) {
+      console.error("STRATEGY_ACCEPT: Error:", error)
+      toast.dismiss()
+      toast.error(`Failed to accept strategy: ${error.message || 'Unknown error'}`)
+    } finally {
+      setIsAcceptingStrategy(false)
+    }
+  }
+
+  const handleGenerateContent = async (platform: 'x' | 'facebook' | 'eventbrite') => {
+    if (!isConnected || !userProfile || !event || !promoterStrategy) {
+      toast.error("Strategy must be accepted before generating content")
+      return
+    }
+
+    setIsGeneratingContent(prev => ({ ...prev, [platform]: true }))
+    
+    try {
+      toast.loading(`📱 Generating ${platform} content...`)
+      
+      const eventData = {
+        eventId: params.id,
+        title: event.title,
+        category: event.category,
+        description: event.description,
+        duration: event.duration,
+        currentSchedule: {
+          date: new Date(event.date).getTime(),
+          time: new Date(event.date).toLocaleTimeString()
+        },
+        currentPricing: {
+          ticketPrice: event.ticketPrice,
+          reservePrice: event.reservePrice
+        }
+      }
+      
+      const contentResult = await generateSocialContent(
+        params.id,
+        userProfile.address,
+        platform,
+        promoterStrategy,
+        eventData
+      )
+      
+      setSocialContent(prev => ({ ...prev, [platform]: contentResult.content }))
+      setContentIterations(prev => ({ ...prev, [platform]: 1 }))
+      
+      toast.dismiss()
+      toast.success(`📱 ${platform} content generated successfully!`)
+      
+    } catch (error: any) {
+      console.error(`CONTENT_GENERATION_${platform.toUpperCase()}: Error:`, error)
+      toast.dismiss()
+      toast.error(`Failed to generate ${platform} content: ${error.message || 'Unknown error'}`)
+    } finally {
+      setIsGeneratingContent(prev => ({ ...prev, [platform]: false }))
+    }
+  }
+
+  const handleRefineContent = async (platform: 'x' | 'facebook' | 'eventbrite', feedback: string) => {
+    if (!userProfile?.address) {
+      toast.error("Please connect your wallet")
+      return
+    }
+
+    try {
+      toast.loading(`🔄 Refining ${platform} content...`)
+      
+      const result = await refineSocialContent(
+        params.id,
+        platform,
+        feedback,
+        userProfile.address
+      )
+      
+      setSocialContent(prev => ({ ...prev, [platform]: result.refinedContent }))
+      setContentIterations(prev => ({ ...prev, [platform]: (prev[platform] || 1) + 1 }))
+      
+      toast.dismiss()
+      toast.success(`🔄 ${platform} content refined successfully!`)
+      
+    } catch (error: any) {
+      console.error(`CONTENT_REFINEMENT_${platform.toUpperCase()}: Error:`, error)
+      toast.dismiss()
+      toast.error(`Failed to refine ${platform} content: ${error.message || 'Unknown error'}`)
+    }
+  }
 
   // Iteration Selector Component with on-chain data
   const IterationSelector = ({ aspect, title }: { aspect: string, title: string }) => {

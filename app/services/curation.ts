@@ -720,3 +720,185 @@ export function clearCachedCurationPlan(eventId: string): void {
     console.error('CURATION_SERVICE: Failed to clear cache:', error)
   }
 }
+
+// NEW PROMOTER FLOW FUNCTIONS
+
+/**
+ * Generate promotional strategy (step 4 after planner plan acceptance)
+ */
+export async function generatePromoterStrategy(
+  eventId: string,
+  userAddress: string,
+  eventData: EventData
+): Promise<any> {
+  try {
+    console.log('CURATION_SERVICE: Generating promoter strategy for event', eventId)
+
+    const response = await fetch(`${CURATION_API_BASE}/promoter/strategy`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        eventId,
+        userAddress,
+        eventData
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`Strategy generation failed: ${response.statusText}`)
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error('CURATION_SERVICE: Error generating promoter strategy:', error)
+    throw error
+  }
+}
+
+/**
+ * Refine promotional strategy based on feedback
+ */
+export async function refinePromoterStrategy(
+  eventId: string,
+  aspect: string,
+  feedback: string,
+  userAddress: string,
+  currentStrategy?: any
+): Promise<any> {
+  try {
+    console.log('CURATION_SERVICE: Refining promoter strategy aspect:', aspect)
+
+    const response = await fetch(`${CURATION_API_BASE}/promoter/strategy/iterate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        eventId,
+        aspect,
+        feedback,
+        userAddress,
+        currentStrategy
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`Strategy refinement failed: ${response.statusText}`)
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error('CURATION_SERVICE: Error refining promoter strategy:', error)
+    throw error
+  }
+}
+
+/**
+ * Accept promotional strategy (enables Content tab)
+ */
+export async function acceptPromoterStrategy(
+  eventId: string,
+  userAddress: string,
+  strategy: any
+): Promise<any> {
+  try {
+    console.log('CURATION_SERVICE: Accepting promoter strategy for event', eventId)
+
+    const response = await fetch(`${CURATION_API_BASE}/promoter/strategy/accept`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        eventId,
+        userAddress,
+        strategy
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`Strategy acceptance failed: ${response.statusText}`)
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error('CURATION_SERVICE: Error accepting promoter strategy:', error)
+    throw error
+  }
+}
+
+/**
+ * Generate social media content for specific platform
+ */
+export async function generateSocialContent(
+  eventId: string,
+  userAddress: string,
+  platform: 'x' | 'facebook' | 'eventbrite',
+  strategy: any,
+  eventData: EventData
+): Promise<any> {
+  try {
+    console.log('CURATION_SERVICE: Generating', platform, 'content for event', eventId)
+
+    const response = await fetch(`${CURATION_API_BASE}/promoter/content/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        eventId,
+        userAddress,
+        platform,
+        strategy,
+        eventData
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`Content generation failed: ${response.statusText}`)
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error('CURATION_SERVICE: Error generating social content:', error)
+    throw error
+  }
+}
+
+/**
+ * Refine social media content based on feedback
+ */
+export async function refineSocialContent(
+  eventId: string,
+  platform: 'x' | 'facebook' | 'eventbrite',
+  feedback: string,
+  userAddress: string
+): Promise<any> {
+  try {
+    console.log('CURATION_SERVICE: Refining', platform, 'content for event', eventId)
+
+    const response = await fetch(`${CURATION_API_BASE}/promoter/content/iterate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        eventId,
+        platform,
+        feedback,
+        userAddress
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`Content refinement failed: ${response.statusText}`)
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error('CURATION_SERVICE: Error refining social content:', error)
+    throw error
+  }
+}
