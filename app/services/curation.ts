@@ -533,7 +533,7 @@ export function getCurationScopesStatic() {
     {
       id: 3,
       name: "Producer",
-      fee: "4%", 
+      fee: "10%", 
       description: "Production and content enhancement",
       services: [
         "No compression storage",
@@ -734,7 +734,7 @@ export async function generatePromoterStrategy(
   try {
     console.log('CURATION_SERVICE: Generating promoter strategy for event', eventId)
 
-    const response = await fetch(`${CURATION_API_BASE}/promoter/strategy`, {
+    const response = await fetch(`${CURATION_API_BASE}/strategy`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -758,7 +758,7 @@ export async function generatePromoterStrategy(
 }
 
 /**
- * Refine promotional strategy based on feedback
+ * Refine promotional strategy based on feedback (same pattern as planner)
  */
 export async function refinePromoterStrategy(
   eventId: string,
@@ -770,7 +770,7 @@ export async function refinePromoterStrategy(
   try {
     console.log('CURATION_SERVICE: Refining promoter strategy aspect:', aspect)
 
-    const response = await fetch(`${CURATION_API_BASE}/promoter/strategy/iterate`, {
+    const response = await fetch(`${CURATION_API_BASE}/strategy/iterate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -788,10 +788,150 @@ export async function refinePromoterStrategy(
       throw new Error(`Strategy refinement failed: ${response.statusText}`)
     }
 
-    return await response.json()
+    const result = await response.json()
+    return {
+      ...result,
+      iterationNumber: result.iterationNumber || 2, // Default to iteration #2 for feedback
+      aspect,
+      timestamp: new Date().toISOString()
+    }
   } catch (error) {
     console.error('CURATION_SERVICE: Error refining promoter strategy:', error)
     throw error
+  }
+}
+
+/**
+ * Get strategy iterations for an aspect directly from blockchain metadata (same pattern as planner)
+ * @param eventId Event ID
+ * @param aspect Strategy aspect to get iterations for (generalStrategy, platformStrategies, timeline)
+ * @returns Iterations object with numeric keys
+ */
+export async function getStrategyIterations(eventId: string, aspect: string): Promise<Record<number, any>> {
+  try {
+    if (!window.ethereum) {
+      throw new Error('Wallet not available')
+    }
+
+    const publicClient = createPublicClient({
+      chain: seiTestnet,
+      transport: http(process.env.NEXT_PUBLIC_SEI_TESTNET_RPC)
+    })
+
+    // Use same EventFactory ABI as planner
+    const eventFactoryABI = [
+      {
+        "type": "function",
+        "name": "tokenURI",
+        "inputs": [{"name": "tokenId", "type": "uint256"}],
+        "outputs": [{"name": "", "type": "string"}],
+        "stateMutability": "view"
+      }
+    ] as const
+
+    // Get metadata URI from blockchain
+    const metadataURI = await publicClient.readContract({
+      address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+      abi: eventFactoryABI,
+      functionName: 'tokenURI',
+      args: [BigInt(eventId)]
+    }) as string
+
+    if (!metadataURI || metadataURI === '') {
+      return {}
+    }
+
+    // Fetch metadata from IPFS using same pattern as planner
+    const metadataUrl = metadataURI.replace('ipfs://', `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/`)
+    const response = await fetch(metadataUrl)
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch metadata: ${response.statusText}`)
+    }
+
+    const metadata = await response.json()
+    return metadata.strategyIterations?.[aspect] || {}
+  } catch (error) {
+    console.error('CURATION_SERVICE: Error getting strategy iterations:', error)
+    return {}
+  }
+}
+
+/**
+ * Get complete promoter strategy from blockchain metadata (same pattern as planner)
+ * @param eventId Event ID
+ * @param userAddress User's wallet address  
+ * @returns Current strategy state with iterations from on-chain metadata
+ */
+export async function getPromoterStrategyFromBlockchain(eventId: string, userAddress: string): Promise<any | null> {
+  try {
+    if (!window.ethereum) {
+      throw new Error('Wallet not available')
+    }
+
+    const publicClient = createPublicClient({
+      chain: seiTestnet,
+      transport: http(process.env.NEXT_PUBLIC_SEI_TESTNET_RPC)
+    })
+
+    // Use same EventFactory ABI as planner
+    const eventFactoryABI = [
+      {
+        "type": "function",
+        "name": "tokenURI",
+        "inputs": [{"name": "tokenId", "type": "uint256"}],
+        "outputs": [{"name": "", "type": "string"}],
+        "stateMutability": "view"
+      }
+    ] as const
+
+    // Get metadata URI from blockchain
+    const metadataURI = await publicClient.readContract({
+      address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+      abi: eventFactoryABI,
+      functionName: 'tokenURI',
+      args: [BigInt(eventId)]
+    }) as string
+
+    if (!metadataURI || metadataURI === '') {
+      console.log('CURATION_SERVICE: No metadata URI found for event', eventId)
+      return null
+    }
+
+    // Fetch metadata from IPFS using same pattern as planner
+    const metadataUrl = metadataURI.replace('ipfs://', `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/`)
+    const response = await fetch(metadataUrl)
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch metadata: ${response.statusText}`)
+    }
+
+    const metadata = await response.json()
+    
+    // Check if this metadata has strategy iterations (strategy in progress) OR is already accepted
+    const hasStrategyIterations = metadata.strategyIterations && Object.keys(metadata.strategyIterations).length > 0
+    const isStrategyAccepted = metadata.strategyStatus === 'accepted'
+    
+    if (!hasStrategyIterations && !isStrategyAccepted) {
+      console.log('CURATION_SERVICE: No strategy data found in metadata for event', eventId)
+      return null
+    }
+
+    // Convert blockchain metadata to strategy format
+    const strategy = {
+      generalStrategy: metadata.strategy?.generalStrategy || metadata.generalStrategy,
+      platformStrategies: metadata.strategy?.platformStrategies || metadata.platformStrategies,
+      timeline: metadata.strategy?.timeline || metadata.timeline,
+      // Include all iterations for UI selection
+      iterations: metadata.strategyIterations,
+      status: metadata.strategyStatus || 'strategy_ready'
+    }
+
+    console.log('CURATION_SERVICE: Retrieved promoter strategy from blockchain for event', eventId)
+    return strategy
+  } catch (error) {
+    console.error('CURATION_SERVICE: Error getting strategy from blockchain:', error)
+    return null
   }
 }
 
@@ -806,7 +946,7 @@ export async function acceptPromoterStrategy(
   try {
     console.log('CURATION_SERVICE: Accepting promoter strategy for event', eventId)
 
-    const response = await fetch(`${CURATION_API_BASE}/promoter/strategy/accept`, {
+    const response = await fetch(`${CURATION_API_BASE}/strategy/accept`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -842,7 +982,7 @@ export async function generateSocialContent(
   try {
     console.log('CURATION_SERVICE: Generating', platform, 'content for event', eventId)
 
-    const response = await fetch(`${CURATION_API_BASE}/promoter/content/generate`, {
+    const response = await fetch(`${CURATION_API_BASE}/content`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -879,7 +1019,7 @@ export async function refineSocialContent(
   try {
     console.log('CURATION_SERVICE: Refining', platform, 'content for event', eventId)
 
-    const response = await fetch(`${CURATION_API_BASE}/promoter/content/iterate`, {
+    const response = await fetch(`${CURATION_API_BASE}/content/iterate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

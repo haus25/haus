@@ -100,6 +100,13 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const [strategyDiscussionMessages, setStrategyDiscussionMessages] = useState<Record<string, Array<{role: string, content: string}>>>({})
   const [isDiscussingStrategy, setIsDiscussingStrategy] = useState(false)
 
+  // Strategy iteration state (same pattern as planner)
+  const [selectedStrategyIterations, setSelectedStrategyIterations] = useState<Record<string, number>>({
+    generalStrategy: 0,
+    platformStrategies: 0,
+    timeline: 0
+  })
+
   useEffect(() => {
     const loadEventData = async () => {
       try {
@@ -647,6 +654,82 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     }
   }
 
+  // Strategy refinement handler (same pattern as planner's handleDiscussion)
+  const handleStrategyDiscussion = async (aspect: string, message: string) => {
+    if (!userProfile?.address) {
+      toast.error("Please connect your wallet")
+      return
+    }
+
+    setIsDiscussingStrategy(true)
+    
+    try {
+      // Add user message to local state immediately
+      setStrategyDiscussionMessages(prev => ({
+        ...prev,
+        [aspect]: [
+          ...(prev[aspect] || []),
+          { role: 'user', content: message }
+        ]
+      }))
+
+      toast.loading(`Discussing ${aspect} refinement...`)
+      
+      const result = await refinePromoterStrategy(
+        params.id,
+        aspect,
+        message,
+        userProfile.address,
+        promoterStrategy
+      )
+      
+      // Add agent response to local state
+      setStrategyDiscussionMessages(prev => ({
+        ...prev,
+        [aspect]: [
+          ...(prev[aspect] || []),
+          { role: 'assistant', content: result.message || 'Refinement completed' }
+        ]
+      }))
+
+      // Update strategy with refined data and iteration number (same pattern as planner)
+      if (result.success && result.iterationNumber) {
+        console.log(`STRATEGY_ITERATION_UPDATE: New iteration ${result.iterationNumber} created for ${aspect}`)
+        
+        // Update selected iteration to the new one
+        setSelectedStrategyIterations(prev => ({
+          ...prev,
+          [aspect]: result.iterationNumber
+        }))
+
+        // Update the strategy with refined data (natural language result)
+        if (result.result) {
+          // Store the natural language result in the strategy iterations
+          setPromoterStrategy((prev: typeof promoterStrategy) => ({
+            ...prev,
+            iterations: {
+              ...prev.iterations,
+              [aspect]: {
+                ...prev.iterations?.[aspect],
+                [result.iterationNumber]: result.result
+              }
+            }
+          }))
+        }
+      }
+      
+      toast.dismiss()
+      toast.success(`✨ ${aspect} refined successfully!`)
+      
+    } catch (error: any) {
+      console.error(`STRATEGY_DISCUSSION_${aspect.toUpperCase()}: Error:`, error)
+      toast.dismiss()
+      toast.error(`Failed to refine ${aspect}: ${error.message || 'Unknown error'}`)
+    } finally {
+      setIsDiscussingStrategy(false)
+    }
+  }
+
   // Iteration Selector Component with on-chain data
   const IterationSelector = ({ aspect, title }: { aspect: string, title: string }) => {
     const [iterations, setIterations] = useState<Record<number, any>>({})
@@ -805,6 +888,61 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     }
   }
 
+  // Helper function to get strategy display value based on selected iteration (same pattern as planner)
+  const getStrategyDisplayValue = (aspect: string): any => {
+    if (!promoterStrategy) return null
+    
+    if (strategyAccepted) {
+      // If strategy is accepted, show accepted values
+      switch (aspect) {
+        case 'generalStrategy':
+          return promoterStrategy.generalStrategy
+        case 'platformStrategies':
+          return promoterStrategy.platformStrategies
+        case 'timeline':
+          return promoterStrategy.timeline
+        default:
+          return null
+      }
+    }
+    
+    // If strategy has iterations, use selected iteration (same pattern as planner)
+    if (promoterStrategy.iterations) {
+      const selectedIteration = selectedStrategyIterations[aspect] || 1 // Default to iteration #1 (AI strategy)
+      const iterations = promoterStrategy.iterations[aspect]
+      
+      if (iterations && iterations[selectedIteration]) {
+        // Return the natural language result from the individual agent
+        const iterationData = iterations[selectedIteration]
+        
+        // Handle natural language responses from individual agents
+        if (aspect === 'generalStrategy' && iterationData.approach) {
+          return iterationData // Return structured data if available
+        } else if (iterationData.approach || iterationData.strategies || iterationData.timeline) {
+          return iterationData // Return natural language content
+        } else {
+          return iterationData // Return whatever format the agent provided
+        }
+      }
+      
+      // Fallback to iteration #1 or #0
+      const fallbackIteration = iterations?.[1] || iterations?.[0]
+      if (fallbackIteration) return fallbackIteration
+    }
+    
+    // Fallback to direct strategy data
+    switch (aspect) {
+      case 'generalStrategy':
+        return promoterStrategy.generalStrategy
+      case 'platformStrategies':
+        return promoterStrategy.platformStrategies
+      case 'timeline':
+        return promoterStrategy.timeline
+      default:
+        return null
+    }
+  }
+
   // Discussion UI Component
   const DiscussionBlock = ({ aspect, title }: { aspect: string, title: string }) => {
     const [message, setMessage] = useState('')
@@ -878,6 +1016,161 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     )
   }
 
+  // Strategy Iteration Selector Component (same pattern as planner)
+  const StrategyIterationSelector = ({ aspect, title }: { aspect: string, title: string }) => {
+    const [iterations, setIterations] = useState<Record<number, any>>({})
+    const [loading, setLoading] = useState(false)
+    
+    // Load iterations for this strategy aspect from blockchain
+    useEffect(() => {
+      if (!promoterStrategy) return
+      
+      const loadIterations = async () => {
+        setLoading(true)
+        try {
+          // Load from blockchain first (same pattern as planner)
+          const { getStrategyIterations } = await import('../../services/curation')
+          const blockchainIterations = await getStrategyIterations(params.id, aspect)
+          
+          // Merge with local strategy iterations
+          const localIterations = promoterStrategy.iterations?.[aspect] || {}
+          const allIterations = { ...localIterations, ...blockchainIterations }
+          
+          setIterations(allIterations)
+          
+          if (Object.keys(allIterations).length > 0) {
+            console.log(`[StrategyIterationSelector] Loaded ${Object.keys(allIterations).length} iterations for ${aspect}:`, allIterations)
+          }
+        } catch (error) {
+          console.error(`Error loading ${aspect} strategy iterations:`, error)
+          // Fallback to local iterations
+          const localIterations = promoterStrategy.iterations?.[aspect] || {}
+          setIterations(localIterations)
+        } finally {
+          setLoading(false)
+        }
+      }
+      
+      loadIterations()
+    }, [aspect, promoterStrategy, params.id])
+    
+    const selectedIteration = selectedStrategyIterations[aspect] || 0
+    const iterationNumbers = Object.keys(iterations).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b)
+    
+    // Only show iteration selector if we have a strategy and it's not accepted
+    if (!promoterStrategy || strategyAccepted) return null
+    
+    // Ensure we always have at least #0 (original)
+    const minIterations = [0]
+    const displayIterations = iterationNumbers.length > 0 ? 
+      [...new Set([...minIterations, ...iterationNumbers])].sort((a, b) => a - b) : 
+      minIterations
+    
+    return (
+      <div className="flex items-center space-x-2 mb-2">
+        <span className="text-sm text-gray-600">{title} Options:</span>
+        <div className="flex space-x-1">
+          {displayIterations.map((iterationNum: number) => (
+            <button
+              key={iterationNum}
+              onClick={() => {
+                setSelectedStrategyIterations(prev => ({ ...prev, [aspect]: iterationNum }))
+              }}
+              className={`px-2 py-1 text-xs rounded font-medium ${
+                iterationNum === selectedIteration 
+                  ? 'bg-red-600 text-white shadow-md' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+              disabled={loading}
+              title={`${getIterationLabel(iterationNum)}: Click to preview this version`}
+            >
+              #{iterationNum}
+            </button>
+          ))}
+        </div>
+        {loading && <span className="text-xs text-gray-500">Loading...</span>}
+        {selectedIteration !== undefined && (
+          <span className="text-xs text-gray-500">
+            Showing: {getIterationLabel(selectedIteration)}
+          </span>
+        )}
+      </div>
+    )
+  }
+
+  // Strategy Discussion UI Component (same pattern as planner)
+  const StrategyDiscussionBlock = ({ aspect, title }: { aspect: string, title: string }) => {
+    const [message, setMessage] = useState('')
+    const messages = strategyDiscussionMessages[aspect] || []
+    const isExpanded = expandedStrategyDiscussion === aspect
+
+    if (!isExpanded) return null
+
+    return (
+      <div className="mt-4 p-4 border rounded-lg bg-gray-50 dark:bg-gray-900">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="font-medium text-sm">Discuss {title}</h4>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setExpandedStrategyDiscussion(null)}
+          >
+            <ChevronUp className="h-4 w-4" />
+          </Button>
+        </div>
+        
+        {/* Message History */}
+        {messages.length > 0 && (
+          <div className="mb-3 max-h-40 overflow-y-auto space-y-2">
+            {messages.map((msg, idx) => (
+              <div key={idx} className={`p-2 rounded text-sm ${
+                msg.role === 'user' 
+                  ? 'bg-blue-100 dark:bg-blue-900 ml-4' 
+                  : 'bg-green-100 dark:bg-green-900 mr-4'
+              }`}>
+                <div className="font-medium text-xs text-gray-600 dark:text-gray-400">
+                  {msg.role === 'user' ? 'You' : 'Agent'}
+                </div>
+                {msg.content}
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {/* Input Area */}
+        <div className="flex gap-2">
+          <Textarea
+            placeholder={`Provide feedback for ${title.toLowerCase()}...`}
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            className="flex-1 min-h-[60px]"
+            disabled={isDiscussingStrategy}
+          />
+          <Button
+            onClick={() => {
+              if (message.trim()) {
+                handleStrategyDiscussion(aspect, message.trim())
+                setMessage('')
+              }
+            }}
+            disabled={!message.trim() || isDiscussingStrategy}
+            size="sm"
+          >
+            {isDiscussingStrategy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+        
+        <p className="text-xs text-gray-500 mt-2">
+          {messages.length >= 4 ? 'Maximum iterations reached' : `${Math.max(0, 2 - Math.floor(messages.length / 2))} iterations remaining`}
+        </p>
+      </div>
+    )
+  }
+
   // Clear purchasing state when wallet disconnects
   useEffect(() => {
     if (!isConnected || !walletClient) {
@@ -932,9 +1225,44 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           { label: event.title }
         ]} />
 
+        {/* Tab Navigation - Show for creators with accepted curation plan */}
+        {isCreator && curationDeployed && curationPlan && curationPlan.status === 'accepted' && (
+          <div className="flex items-center space-x-1 mb-6 border-b">
+            <Button
+              variant={currentTab === 'details' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setCurrentTab('details')}
+              className="rounded-b-none"
+            >
+              Details
+            </Button>
+            <Button
+              variant={currentTab === 'strategy' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setCurrentTab('strategy')}
+              className="rounded-b-none"
+            >
+              Strategy
+            </Button>
+            {strategyAccepted && (
+              <Button
+                variant={currentTab === 'content' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setCurrentTab('content')}
+                className="rounded-b-none"
+              >
+                Content
+              </Button>
+            )}
+          </div>
+        )}
+
         <div className="space-y-6">
-          {/* Consolidated Event Details */}
-          <Card>
+          {/* Details Tab - Always show for non-creators or when details tab is active */}
+          {(!isCreator || !curationDeployed || !curationPlan || curationPlan.status !== 'accepted' || currentTab === 'details') && (
+            <>
+              {/* Consolidated Event Details */}
+              <Card>
             <CardContent className="p-0">
               <div className="aspect-video rounded-t-lg overflow-hidden relative group">
                 <img
@@ -1377,8 +1705,517 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                 </CardContent>
               </Card>
             )}
+            </>
+          )}
 
-            {/* Request Plan Section - Visible after curation is deployed */}
+          {/* Strategy Tab */}
+          {isCreator && curationDeployed && curationPlan && curationPlan.status === 'accepted' && currentTab === 'strategy' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Content Strategy</CardTitle>
+                <CardDescription>
+                  Generate and refine your event's Content Strategy
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {!promoterStrategy ? (
+                  <div className="text-center space-y-4">
+                    <p className="text-muted-foreground">Generate a comprehensive Content Strategy to promote your event</p>
+                    <Button 
+                      onClick={handleGenerateStrategy}
+                      disabled={isGeneratingStrategy}
+                      size="lg"
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      {isGeneratingStrategy ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Generating Strategy...
+                        </>
+                      ) : (
+                        'Generate Content Strategy'
+                      )}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Content Strategy Sections - Same UX as Planner */}
+                    
+                    {/* Accept Strategy Button - Only show when strategy exists and is not accepted */}
+                    {!strategyAccepted && (
+                      <div className="flex gap-2 mb-6">
+                        <Button
+                          onClick={handleAcceptStrategy}
+                          disabled={isAcceptingStrategy}
+                          className="bg-green-600 hover:bg-green-700"
+                        >
+                          {isAcceptingStrategy ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Accepting...
+                            </>
+                          ) : (
+                            'Accept Strategy'
+                          )}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => setPromoterStrategy(null)}
+                        >
+                          Generate New Strategy
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Strategy Accepted Status */}
+                    {strategyAccepted && (
+                      <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg mb-6">
+                        <p className="text-green-800 dark:text-green-200 font-medium">
+                          ✅ Strategy accepted. Go to the Content tab to create your social media content.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Content Plan Section */}
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-semibold">Content Plan</h3>
+                        {!strategyAccepted && (
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700"
+                            onClick={() => setExpandedStrategyDiscussion(expandedStrategyDiscussion === 'generalStrategy' ? null : 'generalStrategy')}
+                            title="Discuss Content Plan"
+                          >
+                            <MessageSquare className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                      <StrategyIterationSelector aspect="generalStrategy" title="Content Plan" />
+                      <StrategyDiscussionBlock aspect="generalStrategy" title="Content Plan" />
+                      
+                      <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">
+                        {(() => {
+                          const generalStrategy = getStrategyDisplayValue('generalStrategy')
+                          if (!generalStrategy) return <p className="text-gray-500">No content plan available</p>
+                          
+                          // Handle natural language response from GeneralStrategyAgent
+                          if (typeof generalStrategy.approach === 'string' && !generalStrategy.rationale) {
+                            // Natural language response from individual agent
+                            return (
+                              <div className="space-y-3">
+                                <div>
+                                  <h4 className="font-medium text-sm mb-1">Content Plan</h4>
+                                  <div className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                                    {generalStrategy.approach}
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          }
+                          
+                          // Handle structured response from ContentManagerAgent  
+                          return (
+                            <div className="space-y-3">
+                              <div>
+                                <h4 className="font-medium text-sm mb-1">Approach</h4>
+                                <p className="text-sm text-muted-foreground">{generalStrategy.approach || 'No approach defined'}</p>
+                              </div>
+                              <div>
+                                <h4 className="font-medium text-sm mb-1">Rationale</h4>
+                                <p className="text-sm text-muted-foreground">{generalStrategy.rationale || 'No rationale provided'}</p>
+                              </div>
+                              <div>
+                                <h4 className="font-medium text-sm mb-1">Target Audience</h4>
+                                <p className="text-sm text-muted-foreground">{generalStrategy.targetAudience || 'No target audience defined'}</p>
+                              </div>
+                              {generalStrategy.keyMessages && generalStrategy.keyMessages.length > 0 && (
+                                <div>
+                                  <h4 className="font-medium text-sm mb-1">Key Messages</h4>
+                                  <ul className="text-sm text-muted-foreground space-y-1">
+                                    {generalStrategy.keyMessages.map((message: string, idx: number) => (
+                                      <li key={idx} className="flex items-start gap-2">
+                                        <span className="text-red-600 mt-1">•</span>
+                                        <span>{message}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* Channels & Format Section */}
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-semibold">Channels & Format</h3>
+                        {!strategyAccepted && (
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700"
+                            onClick={() => setExpandedStrategyDiscussion(expandedStrategyDiscussion === 'platformStrategies' ? null : 'platformStrategies')}
+                            title="Discuss Channels & Format"
+                          >
+                            <MessageSquare className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                      <StrategyIterationSelector aspect="platformStrategies" title="Channels & Format" />
+                      <StrategyDiscussionBlock aspect="platformStrategies" title="Channels & Format" />
+                      
+                      <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">
+                        {(() => {
+                          const platformStrategies = getStrategyDisplayValue('platformStrategies')
+                          if (!platformStrategies) return <p className="text-gray-500">No platform strategies available</p>
+                          
+                          // Handle natural language response from PlatformStrategiesAgent
+                          if (typeof platformStrategies.strategies === 'string') {
+                            // Natural language response from individual agent
+                            return (
+                              <div className="space-y-3">
+                                <div>
+                                  <h4 className="font-medium text-sm mb-1">Platform Strategies</h4>
+                                  <div className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                                    {platformStrategies.strategies}
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          }
+                          
+                          // Handle structured response from ContentManagerAgent
+                          if (typeof platformStrategies === 'object' && !platformStrategies.strategies) {
+                            return (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {Object.entries(platformStrategies).map(([platform, strategy]: [string, any]) => (
+                                  <div key={platform} className="border rounded-lg p-3 bg-white dark:bg-gray-800">
+                                    <h4 className="font-medium text-sm mb-2 capitalize flex items-center gap-2">
+                                      {platform === 'x' ? '🐦 X (Twitter)' : 
+                                       platform === 'facebook' ? '📘 Facebook' :
+                                       platform === 'instagram' ? '📸 Instagram' :
+                                       platform === 'eventbrite' ? '🎟️ Eventbrite' : platform}
+                                    </h4>
+                                    <div className="space-y-2 text-xs">
+                                      {strategy.frequency && (
+                                        <div>
+                                          <span className="font-medium">Frequency:</span> {strategy.frequency}
+                                        </div>
+                                      )}
+                                      {strategy.contentTypes && (
+                                        <div>
+                                          <span className="font-medium">Content:</span> {strategy.contentTypes.join(', ')}
+                                        </div>
+                                      )}
+                                      {strategy.style && (
+                                        <div>
+                                          <span className="font-medium">Style:</span> {strategy.style}
+                                        </div>
+                                      )}
+                                      {strategy.hashtags && (
+                                        <div>
+                                          <span className="font-medium">Tags:</span> {strategy.hashtags.join(' ')}
+                                        </div>
+                                      )}
+                                      {strategy.timing && (
+                                        <div>
+                                          <span className="font-medium">Timing:</span> {strategy.timing}
+                                        </div>
+                                      )}
+                                      {strategy.approach && (
+                                        <div>
+                                          <span className="font-medium">Approach:</span> {strategy.approach}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )
+                          }
+                          
+                          return <p className="text-gray-500">Invalid platform strategies format</p>
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* Timeline Section */}
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-semibold">Timeline</h3>
+                        {!strategyAccepted && (
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700"
+                            onClick={() => setExpandedStrategyDiscussion(expandedStrategyDiscussion === 'timeline' ? null : 'timeline')}
+                            title="Discuss Timeline"
+                          >
+                            <MessageSquare className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                      <StrategyIterationSelector aspect="timeline" title="Timeline" />
+                      <StrategyDiscussionBlock aspect="timeline" title="Timeline" />
+                      
+                      <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">
+                        {(() => {
+                          const timeline = getStrategyDisplayValue('timeline')
+                          if (!timeline) return <p className="text-gray-500">No timeline available</p>
+                          
+                          // Handle natural language response from TimelineAgent
+                          if (typeof timeline.timeline === 'string') {
+                            // Natural language response from individual agent
+                            return (
+                              <div className="space-y-3">
+                                <div>
+                                  <h4 className="font-medium text-sm mb-1">Promotional Timeline</h4>
+                                  <div className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                                    {timeline.timeline}
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          }
+                          
+                          // Handle structured response from ContentManagerAgent
+                          return (
+                            <div className="space-y-4">
+                              {timeline.immediate && timeline.immediate.length > 0 && (
+                                <div>
+                                  <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                                    ⚡ Immediate (Next 24h)
+                                  </h4>
+                                  <ul className="text-sm text-muted-foreground space-y-1">
+                                    {timeline.immediate.map((task: string, idx: number) => (
+                                      <li key={idx} className="flex items-start gap-2">
+                                        <span className="text-red-600 mt-1">•</span>
+                                        <span>{task}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {timeline.shortTerm && timeline.shortTerm.length > 0 && (
+                                <div>
+                                  <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                                    📅 Short-term (Next Week)
+                                  </h4>
+                                  <ul className="text-sm text-muted-foreground space-y-1">
+                                    {timeline.shortTerm.map((task: string, idx: number) => (
+                                      <li key={idx} className="flex items-start gap-2">
+                                        <span className="text-red-600 mt-1">•</span>
+                                        <span>{task}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {timeline.ongoing && timeline.ongoing.length > 0 && (
+                                <div>
+                                  <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
+                                    🔄 Ongoing (Until Event)
+                                  </h4>
+                                  <ul className="text-sm text-muted-foreground space-y-1">
+                                    {timeline.ongoing.map((task: string, idx: number) => (
+                                      <li key={idx} className="flex items-start gap-2">
+                                        <span className="text-red-600 mt-1">•</span>
+                                        <span>{task}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Content Tab */}
+          {isCreator && curationDeployed && curationPlan && curationPlan.status === 'accepted' && currentTab === 'content' && strategyAccepted && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Social Media Content</CardTitle>
+                <CardDescription>
+                  Generate platform-specific content for your event promotion
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* X/Twitter Content */}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold flex items-center gap-2">
+                      <span>🐦 X (Twitter)</span>
+                      {contentIterations.x && (
+                        <Badge variant="secondary">v{contentIterations.x}</Badge>
+                      )}
+                    </h3>
+                    
+                    {socialContent.x ? (
+                      <div className="space-y-3">
+                        <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg text-sm">
+                          {socialContent.x.content || JSON.stringify(socialContent.x, null, 2)}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => {
+                              const feedback = prompt("How would you like to improve this content?")
+                              if (feedback) handleRefineContent('x', feedback)
+                            }}
+                          >
+                            🔄 Refine
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleGenerateContent('x')}
+                            disabled={isGeneratingContent.x}
+                          >
+                            {isGeneratingContent.x ? <Loader2 className="h-3 w-3 animate-spin" /> : '🔄 Regenerate'}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button 
+                        onClick={() => handleGenerateContent('x')}
+                        disabled={isGeneratingContent.x}
+                        className="w-full"
+                      >
+                        {isGeneratingContent.x ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          'Create Post'
+                        )}
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Facebook Content */}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold flex items-center gap-2">
+                      <span>📘 Facebook</span>
+                      {contentIterations.facebook && (
+                        <Badge variant="secondary">v{contentIterations.facebook}</Badge>
+                      )}
+                    </h3>
+                    
+                    {socialContent.facebook ? (
+                      <div className="space-y-3">
+                        <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg text-sm">
+                          {socialContent.facebook.content || JSON.stringify(socialContent.facebook, null, 2)}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => {
+                              const feedback = prompt("How would you like to improve this content?")
+                              if (feedback) handleRefineContent('facebook', feedback)
+                            }}
+                          >
+                            🔄 Refine
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleGenerateContent('facebook')}
+                            disabled={isGeneratingContent.facebook}
+                          >
+                            {isGeneratingContent.facebook ? <Loader2 className="h-3 w-3 animate-spin" /> : '🔄 Regenerate'}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button 
+                        onClick={() => handleGenerateContent('facebook')}
+                        disabled={isGeneratingContent.facebook}
+                        className="w-full"
+                      >
+                        {isGeneratingContent.facebook ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          'Create Post'
+                        )}
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Eventbrite Content */}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold flex items-center gap-2">
+                      <span>🎟️ Eventbrite</span>
+                      {contentIterations.eventbrite && (
+                        <Badge variant="secondary">v{contentIterations.eventbrite}</Badge>
+                      )}
+                    </h3>
+                    
+                    {socialContent.eventbrite ? (
+                      <div className="space-y-3">
+                        <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg text-sm">
+                          {socialContent.eventbrite.content || JSON.stringify(socialContent.eventbrite, null, 2)}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => {
+                              const feedback = prompt("How would you like to improve this content?")
+                              if (feedback) handleRefineContent('eventbrite', feedback)
+                            }}
+                          >
+                            🔄 Refine
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleGenerateContent('eventbrite')}
+                            disabled={isGeneratingContent.eventbrite}
+                          >
+                            {isGeneratingContent.eventbrite ? <Loader2 className="h-3 w-3 animate-spin" /> : '🔄 Regenerate'}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button 
+                        onClick={() => handleGenerateContent('eventbrite')}
+                        disabled={isGeneratingContent.eventbrite}
+                        className="w-full"
+                      >
+                        {isGeneratingContent.eventbrite ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          'Create Listing'
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Request Plan Section - Visible after curation is deployed */}
             {canShowCuration && curationDeployed && !curationPlan && (
               <Card>
                 <CardHeader>
