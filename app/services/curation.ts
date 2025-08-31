@@ -292,17 +292,22 @@ export async function requestCurationPlan(
 
     console.log('CURATION_SERVICE: Requesting new plan generation for event', eventId)
 
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 180000) // 3 minutes timeout
     const response = await fetch(`${CURATION_API_BASE}/plan`, {
       method: 'POST',
+      mode: 'cors',
       headers: {
         'Content-Type': 'application/json',
       },
+      signal: controller.signal,
       body: JSON.stringify({
         eventId,
         userAddress,
         eventData
       })
     })
+    clearTimeout(timeoutId)
 
     if (!response.ok) {
       throw new Error(`Plan request failed: ${response.statusText}`)
@@ -344,6 +349,36 @@ export async function requestCurationPlan(
     console.error('CURATION_SERVICE: Error requesting plan:', error)
     throw error
   }
+}
+
+// Start curation plan with streaming progress (SSE)
+export async function startCurationPlan(
+  eventId: string,
+  userAddress: string,
+  eventData: EventData
+): Promise<{ jobId: string }> {
+  const response = await fetch(`${CURATION_API_BASE}/plan/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ eventId, userAddress, eventData })
+  })
+  if (!response.ok) {
+    throw new Error(`Failed to start plan: ${response.statusText}`)
+  }
+  return response.json()
+}
+
+export function streamCurationProgress(jobId: string, onUpdate: (u: any) => void): () => void {
+  const url = `${CURATION_API_BASE}/plan/stream/${encodeURIComponent(jobId)}`
+  const es = new EventSource(url)
+  es.onmessage = (evt) => {
+    try { onUpdate(JSON.parse(evt.data)) } catch {}
+  }
+  es.onerror = () => {
+    // Let the caller decide retries; close to avoid stuck connections
+    es.close()
+  }
+  return () => es.close()
 }
 
 /**
@@ -415,10 +450,6 @@ export async function getCurationPlan(conversationId: string): Promise<any> {
  */
 export async function getAspectIterations(eventId: string, aspect: string): Promise<Record<number, any>> {
   try {
-    if (!window.ethereum) {
-      throw new Error('Wallet not available')
-    }
-
     const publicClient = createPublicClient({
       chain: seiTestnet,
       transport: http(process.env.NEXT_PUBLIC_SEI_TESTNET_RPC)
@@ -456,7 +487,16 @@ export async function getAspectIterations(eventId: string, aspect: string): Prom
     }
 
     const metadata = await response.json()
-    return metadata.iterations?.[aspect] || {}
+    const iterations = metadata.iterations?.[aspect] || {}
+    if (aspect === 'banner') {
+      for (const key of Object.keys(iterations)) {
+        const it = iterations[key]
+        if (it && it.imageUrl) {
+          iterations[key] = { ...it, imageUrl: normalizeIpfsUrl(it.imageUrl) }
+        }
+      }
+    }
+    return iterations
   } catch (error) {
     console.error('CURATION_SERVICE: Error getting iterations:', error)
     return {}
@@ -470,11 +510,16 @@ export async function requestAspectRefinement(
   userAddress: string
 ): Promise<any> {
   try {
+    // Create AbortController for timeout handling
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 180000) // 3 minutes timeout for image generation
+    
     const response = await fetch(`${CURATION_API_BASE}/iterate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      signal: controller.signal,
       body: JSON.stringify({
         eventId,
         aspect,
@@ -482,6 +527,8 @@ export async function requestAspectRefinement(
         userAddress
       })
     })
+
+    clearTimeout(timeoutId) // Clear timeout on successful response
 
     if (!response.ok) {
       throw new Error(`Refinement failed: ${response.statusText}`)
@@ -494,7 +541,11 @@ export async function requestAspectRefinement(
       aspect,
       timestamp: new Date().toISOString()
     }
-  } catch (error) {
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      console.error('CURATION_SERVICE: Request timed out after 3 minutes')
+      throw new Error(`${aspect} refinement is taking longer than expected. The process is still running in the background.`)
+    }
     console.error('CURATION_SERVICE: Error refining aspect:', error)
     throw error
   }
@@ -599,10 +650,6 @@ export async function acceptCurationProposal(
  */
 export async function getCurationPlanFromBlockchain(eventId: string, userAddress: string): Promise<CurationResult | null> {
   try {
-    if (!window.ethereum) {
-      throw new Error('Wallet not available')
-    }
-
     const publicClient = createPublicClient({
       chain: seiTestnet,
       transport: http(process.env.NEXT_PUBLIC_SEI_TESTNET_RPC)
@@ -652,13 +699,23 @@ export async function getCurationPlanFromBlockchain(eventId: string, userAddress
     }
 
     // Convert blockchain metadata to CurationResult format
+          // Normalize banner URLs inside iterations if present
+          if (metadata.iterations?.banner) {
+            for (const key of Object.keys(metadata.iterations.banner)) {
+              const it = metadata.iterations.banner[key]
+              if (it && it.imageUrl) {
+                metadata.iterations.banner[key] = { ...it, imageUrl: normalizeIpfsUrl(it.imageUrl) }
+              }
+            }
+          }
+
           const curationResult: CurationResult = {
             success: true,
             eventId,
       metadataURI,
       curation: {
         // Extract current values from metadata or iterations
-        banner: metadata.banner || { imageUrl: metadata.image, alt: metadata.name },
+        banner: metadata.banner || { imageUrl: normalizeIpfsUrl(metadata.image), alt: metadata.name },
         title: metadata.title || metadata.name,
         description: metadata.description,
         schedule: extractScheduleFromMetadata(metadata),
@@ -770,11 +827,16 @@ export async function refinePromoterStrategy(
   try {
     console.log('CURATION_SERVICE: Refining promoter strategy aspect:', aspect)
 
+    // Create AbortController for timeout handling
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 120000) // 2 minutes timeout for strategy refinement
+
     const response = await fetch(`${CURATION_API_BASE}/strategy/iterate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      signal: controller.signal,
       body: JSON.stringify({
         eventId,
         aspect,
@@ -783,6 +845,8 @@ export async function refinePromoterStrategy(
         currentStrategy
       })
     })
+
+    clearTimeout(timeoutId) // Clear timeout on successful response
 
     if (!response.ok) {
       throw new Error(`Strategy refinement failed: ${response.statusText}`)
@@ -795,7 +859,11 @@ export async function refinePromoterStrategy(
       aspect,
       timestamp: new Date().toISOString()
     }
-  } catch (error) {
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      console.error('CURATION_SERVICE: Strategy refinement timed out after 2 minutes')
+      throw new Error(`${aspect} strategy refinement is taking longer than expected. The process is still running in the background.`)
+    }
     console.error('CURATION_SERVICE: Error refining promoter strategy:', error)
     throw error
   }
@@ -809,10 +877,6 @@ export async function refinePromoterStrategy(
  */
 export async function getStrategyIterations(eventId: string, aspect: string): Promise<Record<number, any>> {
   try {
-    if (!window.ethereum) {
-      throw new Error('Wallet not available')
-    }
-
     const publicClient = createPublicClient({
       chain: seiTestnet,
       transport: http(process.env.NEXT_PUBLIC_SEI_TESTNET_RPC)
@@ -858,6 +922,143 @@ export async function getStrategyIterations(eventId: string, aspect: string): Pr
 }
 
 /**
+ * Get complete promoter strategy from Pinata metadata
+ * @param eventId Event ID
+ * @param userAddress User's wallet address  
+ * @returns Current strategy state with iterations from Pinata metadata
+ */
+export async function getPromoterStrategyFromPinata(eventId: string, userAddress: string): Promise<any | null> {
+  try {
+    const publicClient = createPublicClient({
+      chain: seiTestnet,
+      transport: http(process.env.NEXT_PUBLIC_SEI_TESTNET_RPC)
+    })
+
+    // Use same EventFactory ABI as getCurationPlanFromBlockchain
+    const eventFactoryABI = [
+      {
+        "type": "function",
+        "name": "tokenURI",
+        "inputs": [{"name": "tokenId", "type": "uint256"}],
+        "outputs": [{"name": "", "type": "string"}],
+        "stateMutability": "view"
+      }
+    ] as const
+
+    // Get metadata URI from blockchain
+    const metadataURI = await publicClient.readContract({
+      address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+      abi: eventFactoryABI,
+      functionName: 'tokenURI',
+      args: [BigInt(eventId)]
+    }) as string
+
+    if (!metadataURI || metadataURI === '') {
+      console.log('STRATEGY_SERVICE: No metadata URI found for event', eventId)
+      return null
+    }
+
+    // Fetch metadata from IPFS
+    const metadataUrl = metadataURI.replace('ipfs://', `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/`)
+    const response = await fetch(metadataUrl)
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch metadata: ${response.statusText}`)
+    }
+
+    const metadata = await response.json()
+    
+    // Check for strategy-specific iterations in the metadata
+    const hasStrategyIterations = metadata.iterations && 
+      (metadata.iterations.strategy_generalStrategy || 
+       metadata.iterations.strategy_platformStrategies || 
+       metadata.iterations.strategy_timeline ||
+       metadata.iterations.strategy_status)
+    
+    // Check for accepted strategy data
+    const hasAcceptedStrategy = metadata.iterations &&
+      (metadata.iterations.strategy_accepted_generalStrategy ||
+       metadata.iterations.strategy_accepted_platformStrategies ||
+       metadata.iterations.strategy_accepted_timeline)
+    
+    if (!hasStrategyIterations && !hasAcceptedStrategy) {
+      console.log('STRATEGY_SERVICE: No strategy data found in metadata for event', eventId)
+      return null
+    }
+
+    console.log('STRATEGY_SERVICE: Found strategy data in metadata for event', eventId)
+
+    // Build strategy object from iterations (same pattern as getCurationPlanFromBlockchain)
+    const strategyData: any = {
+      eventId,
+      userAddress,
+      status: 'pending'
+    }
+
+    // Check if strategy is accepted
+    if (metadata.iterations.strategy_status && metadata.iterations.strategy_status[0] === 'accepted') {
+      strategyData.status = 'accepted'
+      
+      // Load accepted strategy data
+      if (metadata.iterations.strategy_accepted_generalStrategy) {
+        strategyData.generalStrategy = metadata.iterations.strategy_accepted_generalStrategy[0]
+      }
+      if (metadata.iterations.strategy_accepted_platformStrategies) {
+        strategyData.platformStrategies = metadata.iterations.strategy_accepted_platformStrategies[0]
+      }
+      if (metadata.iterations.strategy_accepted_timeline) {
+        strategyData.timeline = metadata.iterations.strategy_accepted_timeline[0]
+      }
+    } else {
+      // Load strategy iterations for refinement
+      strategyData.iterations = {}
+      
+      if (metadata.iterations.strategy_generalStrategy) {
+        strategyData.iterations.generalStrategy = metadata.iterations.strategy_generalStrategy
+      }
+      if (metadata.iterations.strategy_platformStrategies) {
+        strategyData.iterations.platformStrategies = metadata.iterations.strategy_platformStrategies
+      }
+      if (metadata.iterations.strategy_timeline) {
+        strategyData.iterations.timeline = metadata.iterations.strategy_timeline
+      }
+      
+      // Set current strategy values from iteration #1 (initial strategy)
+      if (strategyData.iterations.generalStrategy && strategyData.iterations.generalStrategy[1]) {
+        strategyData.generalStrategy = strategyData.iterations.generalStrategy[1]
+      }
+      if (strategyData.iterations.platformStrategies && strategyData.iterations.platformStrategies[1]) {
+        strategyData.platformStrategies = strategyData.iterations.platformStrategies[1]
+      }
+      if (strategyData.iterations.timeline && strategyData.iterations.timeline[1]) {
+        strategyData.timeline = strategyData.iterations.timeline[1]
+      }
+    }
+
+    return strategyData
+
+  } catch (error) {
+    console.error('STRATEGY_SERVICE: Error loading strategy from Pinata:', error)
+    return null
+  }
+}
+
+// --- Utilities ---
+function normalizeIpfsUrl(url?: string | null): string | null {
+  if (!url) return url ?? null
+  if (url.startsWith('http')) return url
+  if (url.startsWith('ipfs://')) {
+    const ipfsHash = url.slice(7)
+    return `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${ipfsHash}`
+  }
+  // Rough CID check
+  if (/^[A-Za-z0-9]{46,}$/.test(url)) {
+    return `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${url}`
+  }
+  return url
+}
+
+/**
  * Get complete promoter strategy from blockchain metadata (same pattern as planner)
  * @param eventId Event ID
  * @param userAddress User's wallet address  
@@ -865,10 +1066,6 @@ export async function getStrategyIterations(eventId: string, aspect: string): Pr
  */
 export async function getPromoterStrategyFromBlockchain(eventId: string, userAddress: string): Promise<any | null> {
   try {
-    if (!window.ethereum) {
-      throw new Error('Wallet not available')
-    }
-
     const publicClient = createPublicClient({
       chain: seiTestnet,
       transport: http(process.env.NEXT_PUBLIC_SEI_TESTNET_RPC)
@@ -935,6 +1132,18 @@ export async function getPromoterStrategyFromBlockchain(eventId: string, userAdd
   }
 }
 
+// Pinata-only: get promoter strategy state (accepted or latest draft)
+export async function getPromoterStrategyState(eventId: string, userAddress: string): Promise<any | null> {
+  try {
+    const resp = await fetch(`${CURATION_API_BASE}/strategy/state/${eventId}/${userAddress}`)
+    if (!resp.ok) return null
+    return await resp.json()
+  } catch (e) {
+    console.error('CURATION_SERVICE: Error getting promoter strategy state:', e)
+    return null
+  }
+}
+
 /**
  * Accept promotional strategy (enables Content tab)
  */
@@ -975,7 +1184,7 @@ export async function acceptPromoterStrategy(
 export async function generateSocialContent(
   eventId: string,
   userAddress: string,
-  platform: 'x' | 'facebook' | 'eventbrite',
+  platform: 'x' | 'facebook' | 'instagram' | 'eventbrite',
   strategy: any,
   eventData: EventData
 ): Promise<any> {
@@ -1012,18 +1221,23 @@ export async function generateSocialContent(
  */
 export async function refineSocialContent(
   eventId: string,
-  platform: 'x' | 'facebook' | 'eventbrite',
+  platform: 'x' | 'facebook' | 'instagram' | 'eventbrite',
   feedback: string,
   userAddress: string
 ): Promise<any> {
   try {
     console.log('CURATION_SERVICE: Refining', platform, 'content for event', eventId)
 
+    // Create AbortController for timeout handling
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 90000) // 90 seconds timeout for content refinement
+
     const response = await fetch(`${CURATION_API_BASE}/content/iterate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      signal: controller.signal,
       body: JSON.stringify({
         eventId,
         platform,
@@ -1032,13 +1246,79 @@ export async function refineSocialContent(
       })
     })
 
+    clearTimeout(timeoutId) // Clear timeout on successful response
+
     if (!response.ok) {
       throw new Error(`Content refinement failed: ${response.statusText}`)
     }
 
     return await response.json()
-  } catch (error) {
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      console.error('CURATION_SERVICE: Content refinement timed out after 90 seconds')
+      throw new Error(`${platform} content refinement is taking longer than expected. The process is still running in the background.`)
+    }
     console.error('CURATION_SERVICE: Error refining social content:', error)
+    throw error
+  }
+}
+
+/**
+ * Approve social media content (stores on Pinata)
+ */
+export async function approveSocialContent(
+  eventId: string,
+  platform: 'x' | 'facebook' | 'instagram' | 'eventbrite',
+  content: any,
+  userAddress: string
+): Promise<any> {
+  try {
+    console.log('CURATION_SERVICE: Approving', platform, 'content for event', eventId)
+
+    const response = await fetch(`${CURATION_API_BASE}/content/approve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        eventId,
+        platform,
+        content,
+        userAddress
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`Content approval failed: ${response.statusText}`)
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error('CURATION_SERVICE: Error approving social content:', error)
+    throw error
+  }
+}
+
+/**
+ * Get content limits for platform
+ */
+export async function getContentLimits(
+  eventId: string,
+  platform: string,
+  userAddress: string
+): Promise<any> {
+  try {
+    console.log('CURATION_SERVICE: Getting content limits for', platform, 'in event', eventId)
+
+    const response = await fetch(`${CURATION_API_BASE}/content/limits/${eventId}/${platform}/${userAddress}`)
+
+    if (!response.ok) {
+      throw new Error(`Failed to get content limits: ${response.statusText}`)
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error('CURATION_SERVICE: Error getting content limits:', error)
     throw error
   }
 }
