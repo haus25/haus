@@ -16,10 +16,21 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   const [events, setEvents] = useState<OnChainEventData[]>([])
   const [loading, setLoading] = useState(false) // Start with false to avoid SSR issues
   const [error, setError] = useState<string | null>(null)
+  const [lastRefresh, setLastRefresh] = useState<number>(0)
+  
+  // Prevent too frequent refreshes
+  const MIN_REFRESH_INTERVAL = 10000 // 10 seconds
 
-  const refreshEvents = async () => {
+  const refreshEvents = async (force = false) => {
     // Only run on client side
     if (typeof window === 'undefined') {
+      return
+    }
+
+    // Prevent too frequent refreshes unless forced
+    const now = Date.now()
+    if (!force && now - lastRefresh < MIN_REFRESH_INTERVAL) {
+      console.log('EVENTS_CONTEXT: Skipping refresh (too soon)')
       return
     }
 
@@ -30,6 +41,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       
       const onChainEvents = await fetchOnChainEvents()
       setEvents(onChainEvents)
+      setLastRefresh(now)
       
       console.log('EVENTS_CONTEXT: Successfully loaded', onChainEvents.length, 'events')
     } catch (err) {

@@ -150,16 +150,131 @@ export class TicketService {
   private publicClient: any
   private walletClient: any
   private provider: any
+  private static eventCache = new Map<string, { data: any, timestamp: number }>()
+  private static metadataCache = new Map<string, { data: any, timestamp: number }>()
+  private static CACHE_TTL = 30000 // 30 seconds
 
   constructor(provider?: any) {
     console.log('TICKETS: Initializing TicketService')
     this.provider = provider
   }
 
+  private static isCacheValid(timestamp: number): boolean {
+    return Date.now() - timestamp < this.CACHE_TTL
+  }
+
+  private async processEventData(eventIndex: number, eventData: any, tokenURI: any, publicClient: any): Promise<OnChainEventData | null> {
+    try {
+      // Get kiosk data
+      const kioskData = await this.getTicketKioskData(eventData.KioskAddress)
+      
+      // Get metadata with caching
+      const metadata = await this.getCachedMetadata(tokenURI, eventData.metadataURI, eventIndex)
+      
+      // Determine status
+      const now = Date.now()
+      const startTime = Number(eventData.startDate) * 1000
+      const endTime = startTime + (Number(eventData.eventDuration) * 60 * 1000)
+      
+      let status: 'upcoming' | 'live' | 'completed' = 'upcoming'
+      if (now >= startTime && now <= endTime) {
+        status = 'live'
+      } else if (now > endTime) {
+        status = 'completed'
+      }
+
+      return {
+        id: eventIndex.toString(),
+        contractEventId: eventIndex,
+        title: metadata.name || metadata.title || `Event #${eventIndex}`,
+        description: metadata.description || 'Event description not available',
+        creator: eventData.creator,
+        creatorAddress: eventData.creator,
+        category: eventData.artCategory || 'standup-comedy',
+        date: new Date(startTime).toISOString(),
+        duration: Number(eventData.eventDuration),
+        reservePrice: Number(eventData.reservePrice) / 1e18,
+        ticketPrice: kioskData.price / 1e18,
+        maxParticipants: kioskData.totalTickets,
+        participants: kioskData.soldTickets,
+        image: convertIPFSUrl(metadata.image || '/placeholder.svg'),
+        status,
+        finalized: eventData.finalized,
+        ticketKioskAddress: eventData.KioskAddress,
+        eventMetadataURI: eventData.metadataURI
+      }
+    } catch (error) {
+      console.error(`TICKETS: Error processing event ${eventIndex}:`, error)
+      return null
+    }
+  }
+
+  private async getCachedMetadata(tokenURI: any, metadataURI: any, eventIndex: number): Promise<any> {
+    let finalTokenURI = tokenURI
+    
+    // Fallback to metadataURI if tokenURI failed
+    if (!finalTokenURI && metadataURI && 
+        !metadataURI.includes('TEST') && 
+        !metadataURI.includes('FIXED')) {
+      finalTokenURI = metadataURI
+    }
+
+    if (!finalTokenURI) {
+      return {
+        name: `Event #${eventIndex}`,
+        description: 'Event description not available',
+        image: '/placeholder.svg'
+      }
+    }
+
+    // Check cache first
+    const cacheKey = `metadata_${finalTokenURI}`
+    const cached = TicketService.metadataCache.get(cacheKey)
+    if (cached && TicketService.isCacheValid(cached.timestamp)) {
+      return cached.data
+    }
+
+    try {
+      let metadata
+      if (finalTokenURI.startsWith('ipfs://')) {
+        const ipfsHash = finalTokenURI.slice(7)
+        if (ipfsHash && ipfsHash.match(/^[A-Za-z0-9]{44,59}$/) && !ipfsHash.includes('TEST') && !ipfsHash.includes('FIXED')) {
+          const pinataGatewayUrl = `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${ipfsHash}`
+          const response = await fetch(pinataGatewayUrl)
+          if (response.ok) {
+            metadata = await response.json()
+          }
+        }
+      } else if (finalTokenURI.startsWith('http')) {
+        const response = await fetch(finalTokenURI)
+        if (response.ok) {
+          metadata = await response.json()
+        }
+      } else {
+        metadata = JSON.parse(finalTokenURI)
+      }
+
+      if (metadata) {
+        // Cache the result
+        TicketService.metadataCache.set(cacheKey, { data: metadata, timestamp: Date.now() })
+        return metadata
+      }
+    } catch (error) {
+      console.warn(`Failed to parse metadata for event ${eventIndex}:`, error)
+    }
+    
+    return {
+      name: `Event #${eventIndex}`,
+      description: 'Event description not available',
+      image: '/placeholder.svg'
+    }
+  }
+
   private getPublicClient() {
     if (!this.publicClient) {
       if (typeof window !== 'undefined') {
         if (this.provider?.transport) {
+          // Use wallet transport when available (avoids CORS to RPC)
           this.publicClient = createPublicClient({
             chain: seiTestnet,
             transport: custom(this.provider.transport)
@@ -171,6 +286,7 @@ export class TicketService {
           })
         }
       }
+      return this.publicClient
     }
     return this.publicClient
   }
@@ -287,7 +403,7 @@ export class TicketService {
   }
 
   /**
-   * Fetch all events from the EventFactory contract
+   * Fetch all events from the EventFactory contract with caching
    */
   async fetchAllEvents(): Promise<OnChainEventData[]> {
     if (typeof window === 'undefined') {
@@ -297,6 +413,14 @@ export class TicketService {
     const publicClient = this.getPublicClient()
     if (!publicClient) {
       return []
+    }
+
+    // Check cache first
+    const cacheKey = 'all_events'
+    const cached = TicketService.eventCache.get(cacheKey)
+    if (cached && TicketService.isCacheValid(cached.timestamp)) {
+      console.log('TICKETS: Returning cached events')
+      return cached.data
     }
 
     try {
@@ -313,153 +437,62 @@ export class TicketService {
       }
 
       const eventCount = Number(totalEvents)
-      console.log(`TICKETS: Found ${eventCount} events, fetching data in parallel...`)
+      console.log(`TICKETS: Found ${eventCount} events, fetching data with smart batching...`)
 
-      // Step 1: Fetch all basic event data in parallel
-      const eventDataPromises = Array.from({ length: eventCount }, (_, i) =>
-        publicClient.readContract({
-          address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
-          abi: EVENT_FACTORY_ABI,
-          functionName: 'getEvent',
-          args: [BigInt(i)],
-        }).catch((error: any) => {
-          console.error(`TICKETS: Error fetching event ${i}:`, error)
-          return null
-        })
-      )
+      // Batch size to prevent RPC overload
+      const BATCH_SIZE = 5
+      const events: OnChainEventData[] = []
 
-      // Step 2: Fetch all tokenURIs in parallel
-      const tokenURIPromises = Array.from({ length: eventCount }, (_, i) =>
-        publicClient.readContract({
-          address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
-          abi: EVENT_FACTORY_ABI,
-          functionName: 'tokenURI',
-          args: [BigInt(i)],
-        }).catch((error: any) => {
-          console.warn(`Failed to get tokenURI for event ${i}, will use metadataURI fallback`)
-          return null
-        })
-      )
+      for (let i = 0; i < eventCount; i += BATCH_SIZE) {
+        const batchEnd = Math.min(i + BATCH_SIZE, eventCount)
+        const batchIndices = Array.from({ length: batchEnd - i }, (_, idx) => i + idx)
 
-      // Execute both sets of calls in parallel
-      const [eventDataResults, tokenURIResults] = await Promise.all([
-        Promise.all(eventDataPromises),
-        Promise.all(tokenURIPromises)
-      ])
+        // Batch 1: Event data + tokenURI
+        const batchPromises = batchIndices.flatMap(eventIndex => [
+          publicClient.readContract({
+            address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+            abi: EVENT_FACTORY_ABI,
+            functionName: 'getEvent',
+            args: [BigInt(eventIndex)],
+          }).catch(() => null),
+          publicClient.readContract({
+            address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+            abi: EVENT_FACTORY_ABI,
+            functionName: 'tokenURI',
+            args: [BigInt(eventIndex)],
+          }).catch(() => null)
+        ])
 
-      // Step 3: For valid events, fetch kiosk data in parallel
-      const validEvents = eventDataResults
-        .map((eventData, i) => ({ eventData, index: i, tokenURI: tokenURIResults[i] }))
-        .filter(({ eventData }) => eventData !== null)
-
-      const kioskDataPromises = validEvents.map(({ eventData }) =>
-        this.getTicketKioskData(eventData.KioskAddress).catch(error => {
-          console.error('TICKETS: Error fetching kiosk data:', error)
-          return {
-            eventId: 0,
-            totalTickets: 0,
-            soldTickets: 0,
-            remainingTickets: 0,
-            price: 0,
-            artCategory: 'standup-comedy',
-          }
-        })
-      )
-
-      const kioskDataResults = await Promise.all(kioskDataPromises)
-
-      // Step 4: Fetch all metadata in parallel
-      const metadataPromises = validEvents.map(async ({ eventData, tokenURI }, idx) => {
-        try {
-          let finalTokenURI = tokenURI
+        const batchResults = await Promise.all(batchPromises)
+        
+        // Process batch results
+        for (let j = 0; j < batchIndices.length; j++) {
+          const eventIndex = batchIndices[j]
+          const eventData = batchResults[j * 2]
+          const tokenURI = batchResults[j * 2 + 1]
           
-          // Fallback to metadataURI if tokenURI failed
-          if (!finalTokenURI && eventData.metadataURI && 
-              !eventData.metadataURI.includes('TEST') && 
-              !eventData.metadataURI.includes('FIXED')) {
-            finalTokenURI = eventData.metadataURI
+          if (!eventData) continue
+
+          try {
+            const event = await this.processEventData(eventIndex, eventData, tokenURI, publicClient)
+            if (event) events.push(event)
+          } catch (error) {
+            console.error(`TICKETS: Error processing event ${eventIndex}:`, error)
           }
-
-          if (!finalTokenURI) {
-            return {
-              name: `Event #${validEvents[idx].index}`,
-              description: 'Event description not available',
-              image: '/placeholder.svg'
-            }
-          }
-
-          if (finalTokenURI.startsWith('ipfs://')) {
-            const ipfsHash = finalTokenURI.slice(7)
-            // Validate IPFS hash format
-            if (ipfsHash && ipfsHash.match(/^[A-Za-z0-9]{44,59}$/) && !ipfsHash.includes('TEST') && !ipfsHash.includes('FIXED')) {
-              const pinataGatewayUrl = `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${ipfsHash}`
-              const response = await fetch(pinataGatewayUrl)
-              if (response.ok) {
-                return await response.json()
-              }
-            }
-          } else if (finalTokenURI.startsWith('http')) {
-            const response = await fetch(finalTokenURI)
-            if (response.ok) {
-              return await response.json()
-            }
-          } else {
-            return JSON.parse(finalTokenURI)
-          }
-        } catch (error) {
-          console.warn(`Failed to parse metadata for event ${validEvents[idx].index}:`, error)
-        }
-        
-        return {
-          name: `Event #${validEvents[idx].index}`,
-          description: 'Event description not available',
-          image: '/placeholder.svg'
-        }
-      })
-
-      const metadataResults = await Promise.all(metadataPromises)
-
-      // Step 5: Combine all data into final events array
-      const events: OnChainEventData[] = validEvents.map(({ eventData, index }, idx) => {
-        const kioskData = kioskDataResults[idx]
-        const metadata = metadataResults[idx]
-
-        // Determine status
-        const now = Date.now()
-        const startTime = Number(eventData.startDate) * 1000
-        const endTime = startTime + (Number(eventData.eventDuration) * 60 * 1000)
-        
-        let status: 'upcoming' | 'live' | 'completed' = 'upcoming'
-        if (now >= startTime && now <= endTime) {
-          status = 'live'
-        } else if (now > endTime) {
-          status = 'completed'
         }
 
-        return {
-          id: index.toString(),
-          contractEventId: index,
-          title: metadata.name || metadata.title || `Event #${index}`,
-          description: metadata.description || 'Event description not available',
-          creator: eventData.creator,
-          creatorAddress: eventData.creator,
-          category: eventData.artCategory || 'standup-comedy',
-          date: new Date(startTime).toISOString(),
-          duration: Number(eventData.eventDuration),
-          reservePrice: Number(eventData.reservePrice) / 1e18,
-          ticketPrice: kioskData.price / 1e18,
-          maxParticipants: kioskData.totalTickets,
-          participants: kioskData.soldTickets,
-          image: convertIPFSUrl(metadata.image || '/placeholder.svg'),
-          status,
-          finalized: eventData.finalized,
-          ticketKioskAddress: eventData.KioskAddress,
-          eventMetadataURI: eventData.metadataURI
+        // Rate limit between batches
+        if (batchEnd < eventCount) {
+          await new Promise(resolve => setTimeout(resolve, 100))
         }
-      })
+      }
+
+      const sortedEvents = events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       
-      console.log('TICKETS: Successfully fetched', events.length, 'events from blockchain in parallel')
-      return events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      // Cache the results
+      TicketService.eventCache.set(cacheKey, { data: sortedEvents, timestamp: Date.now() })
+      console.log('TICKETS: Successfully fetched and cached', sortedEvents.length, 'events')
+      return sortedEvents
     } catch (error) {
       console.error('TICKETS: Error fetching events:', error)
       throw error

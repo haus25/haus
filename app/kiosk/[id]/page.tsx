@@ -35,7 +35,7 @@ import {
   X
 } from "lucide-react"
 import { toast } from "sonner"
-import { fetchOnChainEvents, type OnChainEventData, createTicketPurchaseService } from "../../services/tickets"
+import { fetchOnChainEvents, type OnChainEventData, createTicketPurchaseService, TicketService } from "../../services/tickets"
 import { useAuth } from "../../contexts/auth"
 import { useWalletClient } from 'wagmi'
 import { 
@@ -57,8 +57,7 @@ import {
   refineSocialContent,
   approveSocialContent,
   getContentLimits,
-  getPromoterStrategyFromPinata,
-  getStrategyIterations
+  
 } from "../../services/curation"
 
 // Import tab components
@@ -90,6 +89,15 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const [discussionMessages, setDiscussionMessages] = useState<Record<string, Array<{role: string, content: string}>>>({})
   const [isDiscussing, setIsDiscussing] = useState(false)
   const [isRequestingPlan, setIsRequestingPlan] = useState(false)
+  const [externalBannerGenerating, setExternalBannerGenerating] = useState(false)
+  const [planProgress, setPlanProgress] = useState<any | null>(null)
+  const [agentStatus, setAgentStatus] = useState<Record<string, 'idle'|'running'|'done'|'error'>>({
+    title: 'idle',
+    description: 'idle',
+    pricing: 'idle',
+    schedule: 'idle',
+    banner: 'idle'
+  })
   const [isAcceptingPlan, setIsAcceptingPlan] = useState(false)
   const [selectedIterations, setSelectedIterations] = useState<Record<string, number>>({
     banner: 0,
@@ -212,8 +220,46 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         console.log('TICKET_DETAIL: Loading event data for ID:', params.id)
         
         // Fetch all events and find the one matching the ID
-        const events = await fetchOnChainEvents()
-        const targetEvent = events.find(e => e.contractEventId === parseInt(params.id))
+        let targetEvent: OnChainEventData | undefined
+        try {
+          const events = await fetchOnChainEvents()
+          targetEvent = events.find(e => e.contractEventId === parseInt(params.id))
+        } catch (err) {
+          console.warn('TICKET_DETAIL: Bulk events fetch failed, will fallback to single fetch', err)
+        }
+        
+        // Fallback: try single event fetch to reduce RPC load (avoid 429)
+        if (!targetEvent) {
+          try {
+            const svc = new TicketService()
+            const ed = await svc.getEventDetails(parseInt(params.id))
+            const ipfsHash = ed.metadataURI?.startsWith('ipfs://') ? ed.metadataURI.slice(7) : ed.metadataURI
+            const metaUrl = ipfsHash ? `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${ipfsHash}` : ''
+            const meta = metaUrl ? await (await fetch(metaUrl)).json() : {}
+            targetEvent = {
+              id: params.id,
+              contractEventId: parseInt(params.id),
+              title: meta.name || `Event #${params.id}`,
+              description: meta.description || '',
+              creator: ed.creator,
+              creatorAddress: ed.creator,
+              category: meta.category || 'performance-art',
+              date: new Date(ed.startDate * 1000).toISOString(),
+              duration: ed.eventDuration,
+              reservePrice: Number(ed.reservePrice),
+              ticketPrice: 0,
+              maxParticipants: 0,
+              participants: 0,
+              image: meta.image ? meta.image.replace('ipfs://', `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/`) : '/placeholder.svg',
+              status: 'upcoming',
+              finalized: ed.finalized,
+              ticketKioskAddress: ed.ticketKioskAddress,
+              eventMetadataURI: ed.metadataURI
+            }
+          } catch (err2) {
+            console.error('TICKET_DETAIL: Single event fallback failed:', err2)
+          }
+        }
         
         if (targetEvent) {
           setEvent(targetEvent)
@@ -270,41 +316,23 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     loadPlanFromBlockchain()
   }, [params.id, userProfile?.address, event])
 
-  // Load promoter strategy from blockchain when user profile is available (same pattern as planner)
+  // Load promoter strategy via backend Pinata state (no blockchain)
   useEffect(() => {
     if (!userProfile?.address || !event || !curationDeployed || !curationPlan || curationPlan.status !== 'accepted') return
-    
-    const loadStrategyFromPinata = async () => {
-      console.log('STRATEGY_PINATA: Checking for strategy on Pinata...')
+    let cancelled = false
+    const load = async () => {
       try {
-        const pinataStrategy = await getPromoterStrategyFromPinata(params.id, userProfile.address)
-        if (pinataStrategy) {
-          console.log('STRATEGY_PINATA: Found strategy on Pinata, loading data')
-          setPromoterStrategy(pinataStrategy)
-          
-          // Check if strategy is already accepted
-          if (pinataStrategy.status === 'accepted') {
-            setStrategyAccepted(true)
-          }
-          
-          // Load iteration counts for UI display (same pattern as planner)
-          const strategyAspects = ['generalStrategy', 'platformStrategies', 'timeline']
-          const strategyIterationCounts: Record<string, number> = {}
-          
-          for (const aspect of strategyAspects) {
-            const iterations = await getStrategyIterations(params.id, aspect)
-            const iterationNumbers = Object.keys(iterations).map(Number).filter(n => !isNaN(n))
-            strategyIterationCounts[aspect] = iterationNumbers.length > 0 ? Math.max(...iterationNumbers) : 0
-          }
-          
-          setSelectedStrategyIterations(strategyIterationCounts)
-        }
-      } catch (error) {
-        console.error('STRATEGY_PINATA: Error loading strategy from Pinata:', error)
+        const { getPromoterStrategyState } = await import('../../services/curation')
+        const state = await getPromoterStrategyState(params.id, userProfile.address)
+        if (!state || cancelled) return
+        if (state.strategy) setPromoterStrategy(state.strategy)
+        if (state.status === 'accepted') setStrategyAccepted(true)
+      } catch (e) {
+        console.error('STRATEGY_STATE: Failed to load strategy state:', e)
       }
     }
-    
-    loadStrategyFromPinata()
+    load()
+    return () => { cancelled = true }
   }, [params.id, userProfile?.address, event, curationDeployed, curationPlan])
 
   const handlePurchaseTicket = async () => {
@@ -448,45 +476,113 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     setIsRequestingPlan(true)
     
     try {
-      toast.loading("🎨 Generating curation plan with AI agents...")
-      
-      const planResult = await requestCurationPlan(
-        params.id,
-        userProfile.address,
-        {
-          eventId: params.id,
-          title: event.title,
-          category: event.category,
-          description: event.description,
-          duration: event.duration,
-          currentSchedule: {
-            date: new Date(event.date).getTime(),
-            time: new Date(event.date).toLocaleTimeString()
-          },
-          currentPricing: {
-            ticketPrice: event.ticketPrice,
-            reservePrice: event.reservePrice
-          }
+      toast.loading("🎨 Generating curation plan...")
+      setAgentStatus({ title: 'running', description: 'running', pricing: 'running', schedule: 'running', banner: 'running' })
+      setExternalBannerGenerating(true)
+      const startPayload = {
+        eventId: params.id,
+        title: event.title,
+        category: event.category,
+        description: event.description,
+        duration: event.duration,
+        currentSchedule: { date: new Date(event.date).getTime(), time: new Date(event.date).toLocaleTimeString() },
+        currentPricing: { ticketPrice: event.ticketPrice, reservePrice: event.reservePrice }
+      }
+      const { startCurationPlan, streamCurationProgress, getCurationPlanFromBlockchain, requestCurationPlan: legacyRequestPlan } = await import('../../services/curation')
+      let jobId: string | null = null
+      try {
+        const res = await startCurationPlan(params.id, userProfile.address, startPayload)
+        jobId = res.jobId
+      } catch (e: any) {
+        console.warn('CURATION_PLAN: /plan/start unavailable, falling back to /plan', e)
+      }
+
+      if (!jobId) {
+        // Fallback to legacy single-call plan
+        const planResult = await legacyRequestPlan(params.id, userProfile.address, startPayload)
+        setCurationPlan(planResult)
+        if (planResult.curation?.iterations) {
+          setSelectedIterations({ banner: 1, title: 1, description: 1, schedule: 1, pricing: 1 })
         }
-      )
-      
-      // Store the complete plan result for display (already includes blockchain data)
-      setCurationPlan(planResult)
-      
-      // Set default iterations to #1 (initial plan) if we have iterations
-      if (planResult.curation?.iterations) {
-        console.log('CURATION_PLAN: Setting default iterations to #1 (initial plan)')
-        setSelectedIterations({
-          banner: 1,
-          title: 1,
-          description: 1,
-          schedule: 1,
-          pricing: 1
-        })
+        toast.dismiss()
+        toast.success('🎨 Curation plan generated successfully!')
+        setAgentStatus({ title: 'done', description: 'done', pricing: 'done', schedule: 'done', banner: 'done' })
+        setExternalBannerGenerating(false)
+        return
       }
       
-      toast.dismiss()
-      toast.success("🎨 Curation plan generated successfully!")
+      // Subscribe to progress stream
+      const unsubscribe = streamCurationProgress(jobId, async (update: any) => {
+        setPlanProgress(update)
+        // Show banner overlay once banner stage is running or completed but not yet visible
+        if (update?.steps?.banner === 'completed' && !getDisplayValue('banner')) {
+          setExternalBannerGenerating(true)
+        }
+        const stageMap: Record<string,string> = { context: 'context', title: 'title', schedule: 'schedule', description: 'description', pricing: 'pricing', banner: 'banner' }
+        if (update?.steps) {
+          const newStatus = { ...agentStatus }
+          for (const k of Object.keys(stageMap)) {
+            const st = update.steps[k]
+            if (st === 'completed' && (newStatus as any)[stageMap[k]] !== 'done') (newStatus as any)[stageMap[k]] = 'done'
+          }
+          setAgentStatus(newStatus)
+        }
+        // When all store_* steps done, fetch from chain
+        const storeDone = ['store_title','store_description','store_pricing','store_schedule','store_banner']
+          .every(k => update?.steps?.[k] === 'completed')
+        if (update.status === 'completed' || storeDone) {
+          try {
+            const finalPlan = await getCurationPlanFromBlockchain(params.id, userProfile.address)
+            if (finalPlan) {
+              setCurationPlan(finalPlan)
+              // Default to iteration #1 where available
+              if (finalPlan.curation?.iterations) {
+                setSelectedIterations({ banner: 1, title: 1, description: 1, schedule: 1, pricing: 1 })
+              }
+              toast.dismiss()
+              toast.success('🎨 Curation plan ready!')
+            }
+          } finally {
+            setAgentStatus({ title: 'done', description: 'done', pricing: 'done', schedule: 'done', banner: 'done' })
+            setExternalBannerGenerating(false)
+            unsubscribe()
+          }
+        }
+      })
+
+      // Safety net: Poll blockchain for iterations in case stream doesn’t arrive via proxy
+      const pollStart = Date.now()
+      const poll = async () => {
+        try {
+          const aspects: Array<keyof typeof agentStatus> = ['title','description','pricing','schedule','banner']
+          const updates: Record<string,'idle'|'running'|'done'|'error'> = { ...agentStatus }
+          for (const aspect of aspects) {
+            if (updates[aspect] === 'done') continue
+            const its = await getAspectIterations(params.id, aspect)
+            const hasInitial = its && Object.keys(its).map(Number).includes(1)
+            if (hasInitial) {
+              setSelectedIterations(prev => ({ ...prev, [aspect]: 1 }))
+              updates[aspect] = 'done'
+            } else {
+              updates[aspect] = 'running'
+            }
+          }
+          setAgentStatus(updates)
+          const allDone = Object.values(updates).every(v => v === 'done')
+          if (allDone) {
+            const finalPlan = await getCurationPlanFromBlockchain(params.id, userProfile.address)
+            if (finalPlan) setCurationPlan(finalPlan)
+            setExternalBannerGenerating(false)
+            toast.dismiss()
+            toast.success('🎨 Curation plan ready!')
+            return
+          }
+        } catch (e) {
+          // keep polling
+        }
+        if (Date.now() - pollStart < 180000) setTimeout(poll, 10000)
+      }
+      setTimeout(poll, 10000)
       
     } catch (error: any) {
       console.error("CURATION_REQUEST: Error:", error)
@@ -577,7 +673,16 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         ]
       }))
 
-      toast.loading(`Discussing ${aspect} refinement...`)
+      // Special handling for banner generation
+      if (aspect === 'banner') {
+        toast.loading(`🎨 Starting banner generation... up to 2-3 mins`, { duration: 8000 })
+        setExternalBannerGenerating(true)
+        
+        // Start banner polling mechanism
+        startBannerPolling(aspect, message)
+      } else {
+        toast.loading(`Discussing ${aspect} refinement...`)
+      }
       
       const result = await requestAspectRefinement(
         params.id,
@@ -595,6 +700,15 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         ]
       }))
 
+      // Handle banner generation status
+      if (aspect === 'banner' && result.status === 'generating') {
+        toast.dismiss()
+        toast.success(`🎨 Banner generation started! It may take up to 2-3 mins...`, { duration: 10000 })
+        // Polling will handle the completion
+        return
+      }
+
+      // For non-banner aspects or completed banner generation
       // Iteration is now stored on-chain via the backend
       // Reload the plan from blockchain to get updated iterations
       if (result.success && result.iterationNumber) {
@@ -623,10 +737,75 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     } catch (error: any) {
       console.error(`DISCUSSION_${aspect.toUpperCase()}: Error:`, error)
       toast.dismiss()
-      toast.error(`Failed to refine ${aspect}: ${error.message || 'Unknown error'}`)
+      
+      if (aspect === 'banner' && error.message?.includes('longer than expected')) {
+        toast.success(`🎨 Banner generation continues in background. Please wait 2-3 minutes...`, { duration: 15000 })
+        setExternalBannerGenerating(true)
+        startBannerPolling(aspect, message)
+      } else {
+        toast.error(`Failed to refine ${aspect}: ${error.message || 'Unknown error'}`)
+      }
     } finally {
       setIsDiscussing(false)
     }
+  }
+
+  // Banner polling mechanism
+  const startBannerPolling = (aspect: string, message: string) => {
+    if (!userProfile?.address) return
+    
+    const pollInterval = setInterval(async () => {
+      try {
+        const { pollForBannerCompletion } = await import('../../services/curation')
+        const currentIteration = selectedIterations[aspect] || 1
+        
+        const result = await pollForBannerCompletion(params.id, userProfile.address, currentIteration)
+        
+        if (result.completed && result.newIteration) {
+          clearInterval(pollInterval)
+          setExternalBannerGenerating(false)
+          
+          // Update the plan with new iteration
+          try {
+            const updatedPlan = await getCurationPlanFromBlockchain(params.id, userProfile.address)
+            if (updatedPlan) {
+              setCurationPlan(updatedPlan)
+              setSelectedIterations(prev => ({
+                ...prev,
+                [aspect]: result.newIteration.iterationNumber
+              }))
+            }
+          } catch (error) {
+            console.error('BANNER_POLL: Failed to reload plan:', error)
+          }
+          
+          toast.dismiss()
+          toast.success(`🎨 New banner generated successfully!`, { duration: 8000 })
+          
+          // Add completion message to discussion
+          setDiscussionMessages(prev => ({
+            ...prev,
+            [aspect]: [
+              ...(prev[aspect] || []),
+              { role: 'assistant', content: 'Banner generation completed successfully!' }
+            ]
+          }))
+        } else if (result.error) {
+          console.error('BANNER_POLL: Polling error:', result.error)
+        }
+      } catch (error) {
+        console.error('BANNER_POLL: Polling failed:', error)
+      }
+    }, 15000) // Poll every 15 seconds
+    
+    // Stop polling after 5 minutes maximum
+    setTimeout(() => {
+      clearInterval(pollInterval)
+      if (externalBannerGenerating) {
+        setExternalBannerGenerating(false)
+        toast.error('Banner generation took too long. Please check back later or try again.')
+      }
+    }, 300000) // 5 minutes
   }
 
   const isCreator = isCreatorConfirmed === true
@@ -1077,10 +1256,24 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     // Handle structured content from different platforms
     switch (platform) {
       case 'x':
-        if (content.tweets) {
-          return content.tweets.map((tweet: any, idx: number) => 
-            `Tweet ${idx + 1}: ${tweet.text || tweet.content || JSON.stringify(tweet)}`
-          ).join('\n\n')
+        // New structured format from social agent
+        if (content.mainpost || content.thread) {
+          const parts: string[] = []
+          const main = content.mainpost?.content || content.mainpost?.text || content.content || content.text
+          if (main) parts.push(main)
+          const hashtags: string[] = content.mainpost?.hashtags || content.hashtags || []
+          if (Array.isArray(hashtags) && hashtags.length) {
+            parts.push(hashtags.map((h: string) => (h.startsWith('#') ? h : `#${h}`)).join(' '))
+          }
+          const tweets = content.thread?.tweets || content.tweets || []
+          if (Array.isArray(tweets) && tweets.length) {
+            const threadText = tweets.map((t: any, idx: number) => `Thread ${idx + 1}: ${(t?.content || t?.text || String(t)).trim()}`).join('\n')
+            parts.push(threadText)
+          }
+          return parts.filter(Boolean).join('\n\n') || JSON.stringify(content, null, 2)
+        }
+        if (Array.isArray(content.tweets)) {
+          return content.tweets.map((tweet: any, idx: number) => `Tweet ${idx + 1}: ${tweet.text || tweet.content || JSON.stringify(tweet)}`).join('\n\n')
         }
         return content.content || content.text || JSON.stringify(content, null, 2)
         
@@ -1450,6 +1643,19 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           { label: event.title }
         ]} />
 
+        {planProgress && planProgress.status !== 'completed' && (
+          <div className="mb-4 p-3 rounded border bg-white/60">
+            <div className="text-sm font-medium mb-2">Plan generation in progress</div>
+            <div className="flex flex-wrap gap-2 text-xs">
+              {['context','title','schedule','description','pricing','banner','store_title','store_description','store_pricing','store_schedule','store_banner'].map(k => (
+                <span key={k} className={`px-2 py-1 rounded ${planProgress?.steps?.[k]==='completed' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                  {k.replace('store_','save ')}{planProgress?.steps?.[k]==='completed' ? ' ✓' : ' ...'}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Tab Navigation - Show for creators with accepted curation plan */}
         {isCreator && curationDeployed && curationPlan && curationPlan.status === 'accepted' && (
           <div className="flex items-center space-x-1 mb-6 border-b">
@@ -1518,6 +1724,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
               DiscussionBlock={DiscussionBlock}
               eventId={params.id}
               userAddress={userProfile?.address}
+              externalBannerGenerating={externalBannerGenerating}
             />
           )}
 
@@ -1558,6 +1765,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
               onPreviewContent={() => {}} // Preview handled internally in ContentTab
               onApproveContent={handleApproveContent}
               renderSocialContent={renderSocialContent}
+              bannerUrl={getDisplayValue('banner') || event.image}
             />
           )}
         </div>

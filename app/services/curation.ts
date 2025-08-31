@@ -8,6 +8,14 @@ import { CONTRACT_ADDRESSES, EVENT_FACTORY_ABI } from '../lib/constants'
 
 const CURATION_API_BASE = process.env.NEXT_PUBLIC_CURATION_URL || 'http://localhost:3001'
 
+// Static cache for curation data
+const curationCache = new Map<string, { data: any, timestamp: number }>()
+const CACHE_TTL = 30000 // 30 seconds
+
+function isCacheValid(timestamp: number): boolean {
+  return Date.now() - timestamp < CACHE_TTL
+}
+
 // Types for curation data
 export interface EventData {
   eventId: string
@@ -292,22 +300,19 @@ export async function requestCurationPlan(
 
     console.log('CURATION_SERVICE: Requesting new plan generation for event', eventId)
 
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 180000) // 3 minutes timeout
+    // Remove timeout for plan generation since banner generation can take 2-3 minutes
     const response = await fetch(`${CURATION_API_BASE}/plan`, {
       method: 'POST',
       mode: 'cors',
       headers: {
         'Content-Type': 'application/json',
       },
-      signal: controller.signal,
       body: JSON.stringify({
         eventId,
         userAddress,
         eventData
       })
     })
-    clearTimeout(timeoutId)
 
     if (!response.ok) {
       throw new Error(`Plan request failed: ${response.statusText}`)
@@ -480,7 +485,7 @@ export async function getAspectIterations(eventId: string, aspect: string): Prom
 
     // Fetch metadata from IPFS using same pattern as kiosk/profile
     const metadataUrl = metadataURI.replace('ipfs://', `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/`)
-    const response = await fetch(metadataUrl)
+    const response = await fetch(`${metadataUrl}?t=${Date.now()}`)
     
     if (!response.ok) {
       throw new Error(`Failed to fetch metadata: ${response.statusText}`)
@@ -510,9 +515,14 @@ export async function requestAspectRefinement(
   userAddress: string
 ): Promise<any> {
   try {
-    // Create AbortController for timeout handling
+    // Special handling for banner generation
+    if (aspect === 'banner') {
+      return await handleBannerRefinementWithPolling(eventId, aspect, feedback, userAddress)
+    }
+
+    // For non-banner aspects, keep existing timeout
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 180000) // 3 minutes timeout for image generation
+    const timeoutId = setTimeout(() => controller.abort(), 180000) // 3 minutes timeout for other aspects
     
     const response = await fetch(`${CURATION_API_BASE}/iterate`, {
       method: 'POST',
@@ -548,6 +558,93 @@ export async function requestAspectRefinement(
     }
     console.error('CURATION_SERVICE: Error refining aspect:', error)
     throw error
+  }
+}
+
+/**
+ * Handle banner refinement with polling mechanism
+ */
+async function handleBannerRefinementWithPolling(
+  eventId: string,
+  aspect: string,
+  feedback: string,
+  userAddress: string
+): Promise<any> {
+  console.log('CURATION_SERVICE: Starting banner refinement with polling mechanism')
+  
+  // Start banner generation without timeout
+  const startTime = Date.now()
+  let generationStarted = false
+  
+  try {
+    // Initiate banner generation (fire and forget)
+    fetch(`${CURATION_API_BASE}/iterate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        eventId,
+        aspect,
+        feedback,
+        userAddress
+      })
+    }).catch(error => {
+      console.error('CURATION_SERVICE: Banner generation request failed:', error)
+    })
+    
+    generationStarted = true
+    console.log('CURATION_SERVICE: Banner generation request sent, starting polling...')
+    
+    // Return immediately with status indicating generation is in progress
+    return {
+      success: true,
+      aspect: 'banner',
+      message: 'Banner generation started. It may take up to 2-3 mins.',
+      iterationNumber: 2, // Will be updated when generation completes
+      timestamp: new Date().toISOString(),
+      status: 'generating',
+    }
+    
+  } catch (error: any) {
+    console.error('CURATION_SERVICE: Error starting banner refinement:', error)
+    throw error
+  }
+}
+
+/**
+ * Poll for banner completion - called by UI components
+ */
+export async function pollForBannerCompletion(
+  eventId: string,
+  userAddress: string,
+  lastIterationNumber: number = 1
+): Promise<{ completed: boolean, newIteration?: any, error?: string }> {
+  try {
+    console.log('CURATION_SERVICE: Polling for banner completion...')
+    
+    // Get latest iterations from blockchain
+    const iterations = await getAspectIterations(eventId, 'banner')
+    const iterationNumbers = Object.keys(iterations).map(Number).filter(n => !isNaN(n))
+    const maxIteration = iterationNumbers.length > 0 ? Math.max(...iterationNumbers) : 0
+    
+    if (maxIteration > lastIterationNumber) {
+      console.log(`CURATION_SERVICE: New banner iteration ${maxIteration} found!`)
+      return {
+        completed: true,
+        newIteration: {
+          iterationNumber: maxIteration,
+          result: iterations[maxIteration],
+          aspect: 'banner',
+          timestamp: new Date().toISOString()
+        }
+      }
+    }
+    
+    return { completed: false }
+  } catch (error: any) {
+    console.error('CURATION_SERVICE: Error polling for banner completion:', error)
+    return { completed: false, error: error.message }
   }
 }
 
@@ -649,6 +746,14 @@ export async function acceptCurationProposal(
  * @returns Current plan state with iterations from on-chain metadata
  */
 export async function getCurationPlanFromBlockchain(eventId: string, userAddress: string): Promise<CurationResult | null> {
+  // Check cache first
+  const cacheKey = `curation_plan_${eventId}_${userAddress}`
+  const cached = curationCache.get(cacheKey)
+  if (cached && isCacheValid(cached.timestamp)) {
+    console.log('CURATION_SERVICE: Returning cached plan for event', eventId)
+    return cached.data
+  }
+
   try {
     const publicClient = createPublicClient({
       chain: seiTestnet,
@@ -680,8 +785,8 @@ export async function getCurationPlanFromBlockchain(eventId: string, userAddress
     }
 
     // Fetch metadata from IPFS using same pattern as kiosk/profile
-    const metadataUrl = metadataURI.replace('ipfs://', `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/`)
-    const response = await fetch(metadataUrl)
+    const metadataUrl2 = metadataURI.replace('ipfs://', `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/`)
+    const response = await fetch(`${metadataUrl2}?t=${Date.now()}`)
     
     if (!response.ok) {
       throw new Error(`Failed to fetch metadata: ${response.statusText}`)
@@ -730,6 +835,9 @@ export async function getCurationPlanFromBlockchain(eventId: string, userAddress
     }
 
     console.log('CURATION_SERVICE: Retrieved curation plan from blockchain for event', eventId)
+    
+    // Cache the result
+    curationCache.set(cacheKey, { data: curationResult, timestamp: Date.now() })
     return curationResult
   } catch (error) {
     console.error('CURATION_SERVICE: Error getting plan from blockchain:', error)
@@ -907,7 +1015,7 @@ export async function getStrategyIterations(eventId: string, aspect: string): Pr
 
     // Fetch metadata from IPFS using same pattern as planner
     const metadataUrl = metadataURI.replace('ipfs://', `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/`)
-    const response = await fetch(metadataUrl)
+    const response = await fetch(`${metadataUrl}?t=${Date.now()}`)
     
     if (!response.ok) {
       throw new Error(`Failed to fetch metadata: ${response.statusText}`)
@@ -1190,12 +1298,14 @@ export async function generateSocialContent(
 ): Promise<any> {
   try {
     console.log('CURATION_SERVICE: Generating', platform, 'content for event', eventId)
-
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 120000) // 120s budget for generation
     const response = await fetch(`${CURATION_API_BASE}/content`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      signal: controller.signal,
       body: JSON.stringify({
         eventId,
         userAddress,
@@ -1204,6 +1314,7 @@ export async function generateSocialContent(
         eventData
       })
     })
+    clearTimeout(timeoutId)
 
     if (!response.ok) {
       throw new Error(`Content generation failed: ${response.statusText}`)
@@ -1211,6 +1322,9 @@ export async function generateSocialContent(
 
     return await response.json()
   } catch (error) {
+    if ((error as any)?.name === 'AbortError') {
+      throw new Error(`${platform} content generation timed out. It continues in background; try preview again in a moment.`)
+    }
     console.error('CURATION_SERVICE: Error generating social content:', error)
     throw error
   }

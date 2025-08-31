@@ -22,6 +22,7 @@ interface ContentTabProps {
   onPreviewContent: (platform: string, content: any) => void
   onApproveContent: (platform: 'x' | 'facebook' | 'instagram' | 'eventbrite') => void
   renderSocialContent: (content: any, platform: string) => string
+  bannerUrl?: string | null
 }
 
 export default function ContentTab({
@@ -35,7 +36,8 @@ export default function ContentTab({
   onRefineContent,
   onPreviewContent,
   onApproveContent,
-  renderSocialContent
+  renderSocialContent,
+  bannerUrl
 }: ContentTabProps) {
 
   const [showPastContent, setShowPastContent] = useState<Record<string, boolean>>({})
@@ -234,6 +236,7 @@ export default function ContentTab({
           onClose={() => setPreviewModal(null)}
           event={event}
           renderSocialContent={renderSocialContent}
+          bannerUrl={bannerUrl}
         />
       )}
     </>
@@ -247,7 +250,8 @@ function PlatformPreviewModal({
   isOpen, 
   onClose, 
   event,
-  renderSocialContent 
+  renderSocialContent, 
+  bannerUrl
 }: { 
   platform: string
   content: any
@@ -255,6 +259,7 @@ function PlatformPreviewModal({
   onClose: () => void
   event: OnChainEventData
   renderSocialContent: (content: any, platform: string) => string
+  bannerUrl?: string | null
 }) {
   if (!content) return null
 
@@ -280,6 +285,11 @@ function PlatformPreviewModal({
                       <span className="text-gray-500">·</span>
                       <span className="text-gray-500 text-[15px]">2m</span>
                     </div>
+                    {bannerUrl && (
+                      <div className="mb-3 overflow-hidden rounded-xl border border-gray-800">
+                        <img src={bannerUrl} alt={event.title} className="w-full h-auto" />
+                      </div>
+                    )}
                     <div className="text-white text-[15px] leading-5 mb-3 whitespace-pre-wrap">
                       {renderSocialContent(content, 'x')}
                     </div>
@@ -327,13 +337,17 @@ function PlatformPreviewModal({
                   </button>
                 </div>
               </div>
-              <div className="aspect-[4/3] bg-gradient-to-br from-purple-50 via-pink-50 to-orange-50 flex items-center justify-center relative">
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 rounded-2xl flex items-center justify-center mb-2 mx-auto shadow-lg">
-                    <span className="text-white font-bold text-xl">🎭</span>
+              <div className="aspect-[4/3] bg-black flex items-center justify-center relative">
+                {bannerUrl ? (
+                  <img src={bannerUrl} alt={event.title} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="text-center">
+                    <div className="w-16 h-16 bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 rounded-2xl flex items-center justify-center mb-2 mx-auto shadow-lg">
+                      <span className="text-white font-bold text-xl">🎭</span>
+                    </div>
+                    <span className="text-gray-600 text-sm font-medium">Event Visual</span>
                   </div>
-                  <span className="text-gray-600 text-sm font-medium">Event Visual</span>
-                </div>
+                )}
               </div>
               <div className="p-3">
                 <div className="text-sm text-gray-900">
@@ -367,6 +381,11 @@ function PlatformPreviewModal({
                   </div>
                 </div>
               </div>
+              {bannerUrl && (
+                <div className="w-full">
+                  <img src={bannerUrl} alt={event.title} className="w-full h-auto object-cover" />
+                </div>
+              )}
               <div className="px-4 py-3">
                 <div className="text-gray-800 text-[15px] whitespace-pre-wrap leading-relaxed">
                   {renderSocialContent(content, 'facebook')}

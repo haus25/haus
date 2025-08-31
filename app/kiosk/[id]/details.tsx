@@ -97,7 +97,8 @@ export default function DetailsTab({
   IterationSelector,
   DiscussionBlock,
   eventId,
-  userAddress
+  userAddress,
+  externalBannerGenerating
 }: DetailsTabProps) {
   
   // Banner polling state
@@ -128,8 +129,8 @@ export default function DetailsTab({
     }
 
     if (isBannerGenerating) {
-      // Poll every 3 seconds when banner is generating
-      pollInterval = setInterval(pollForBannerUpdate, 3000)
+      // Poll every 10 seconds to reduce RPC load
+      pollInterval = setInterval(pollForBannerUpdate, 10000)
     }
 
     return () => {
@@ -175,15 +176,26 @@ export default function DetailsTab({
               src={getDisplayValue('banner') || event.image}
               alt={event.title}
               className={`w-full h-full object-cover transition-all duration-500 ${
-                isBannerGenerating ? 'blur-sm opacity-75' : ''
+                (isBannerGenerating || externalBannerGenerating) ? 'blur-sm opacity-75' : ''
               }`}
             />
-            {isBannerGenerating && (
+            {(isBannerGenerating || externalBannerGenerating) && (
               <div className="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center">
-                <div className="bg-white bg-opacity-90 px-4 py-2 rounded-lg shadow-lg">
-                  <div className="flex items-center space-x-2">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600"></div>
-                    <span className="text-sm font-medium text-gray-800">Generating banner...</span>
+                <div className="bg-white bg-opacity-95 px-6 py-4 rounded-lg shadow-xl max-w-xs text-center">
+                  <div className="flex items-center justify-center space-x-3 mb-2">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-red-600"></div>
+                    <span className="text-sm font-medium text-gray-800">AI Banner Generation</span>
+                  </div>
+                  <div className="text-xs text-gray-600 mb-2">
+                    Creating your custom event banner...
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    ⏱️ This takes 2-3 minutes
+                  </div>
+                  <div className="mt-2">
+                    <div className="animate-pulse bg-red-200 h-1 rounded-full">
+                      <div className="bg-red-600 h-1 rounded-full animate-pulse" style={{width: '60%'}}></div>
+                    </div>
                   </div>
                 </div>
               </div>

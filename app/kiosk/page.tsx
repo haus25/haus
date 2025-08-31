@@ -70,8 +70,9 @@ export default function TicketKiosk() {
         const ticketService = createTicketPurchaseService(walletClient)
         const ownedTicketEventIds = new Set<number>()
 
-        // Check each event to see if user owns a ticket
-        for (const event of events) {
+        // Check only first 10 events to prevent RPC overload
+        const eventsToCheck = events.slice(0, 10)
+        for (const event of eventsToCheck) {
           try {
             const hasTicket = await ticketService.userHasTicket(event.contractEventId, userProfile.address)
             if (hasTicket) {
@@ -91,8 +92,8 @@ export default function TicketKiosk() {
       }
     }
 
-    // Add a small delay to avoid conflicts with ongoing transactions
-    const timeoutId = setTimeout(checkUserTickets, 500)
+    // Debounce with longer delay to prevent rapid calls
+    const timeoutId = setTimeout(checkUserTickets, 2000)
     return () => clearTimeout(timeoutId)
   }, [events, isConnected, userProfile?.address, walletClient])
 
@@ -108,20 +109,21 @@ export default function TicketKiosk() {
         console.log('CURATION_CHECK: Checking curation status for user events')
         const curatedEventIds = new Set<number>()
 
-        // Check each of the user's events for curation status
-        for (const event of events) {
-          // Only check events owned by the current user
-          if (event.creatorAddress.toLowerCase() === userProfile.address.toLowerCase()) {
-            try {
-              const curationPlan = await getCurationPlanFromBlockchain(event.contractEventId.toString(), userProfile.address)
-              if (curationPlan && curationPlan.status === 'accepted') {
-                curatedEventIds.add(event.contractEventId)
-                console.log('CURATION_CHECK: Event', event.contractEventId, 'has been curated')
-              }
-            } catch (error) {
-              // Skip events that can't be checked or don't have curation
-              console.log(`Curation check skipped for event ${event.contractEventId}:`, error)
+        // Check only user's events for curation status, limit to first 5
+        const userEvents = events.filter(event => 
+          event.creatorAddress.toLowerCase() === userProfile.address.toLowerCase()
+        ).slice(0, 5)
+        
+        for (const event of userEvents) {
+          try {
+            const curationPlan = await getCurationPlanFromBlockchain(event.contractEventId.toString(), userProfile.address)
+            if (curationPlan && curationPlan.status === 'accepted') {
+              curatedEventIds.add(event.contractEventId)
+              console.log('CURATION_CHECK: Event', event.contractEventId, 'has been curated')
             }
+          } catch (error) {
+            // Skip events that can't be checked or don't have curation
+            console.log(`Curation check skipped for event ${event.contractEventId}:`, error)
           }
         }
 
@@ -132,8 +134,8 @@ export default function TicketKiosk() {
       }
     }
 
-    // Add a delay to avoid conflicts with other checks
-    const timeoutId = setTimeout(checkCurationStatus, 1000)
+    // Add longer delay to reduce RPC load
+    const timeoutId = setTimeout(checkCurationStatus, 3000)
     return () => clearTimeout(timeoutId)
   }, [events, isConnected, userProfile?.address])
 
