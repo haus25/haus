@@ -520,16 +520,12 @@ export async function requestAspectRefinement(
       return await handleBannerRefinementWithPolling(eventId, aspect, feedback, userAddress)
     }
 
-    // For non-banner aspects, keep existing timeout
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 180000) // 3 minutes timeout for other aspects
-    
+    // For non-banner aspects, remove timeout to prevent false failures
     const response = await fetch(`${CURATION_API_BASE}/iterate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      signal: controller.signal,
       body: JSON.stringify({
         eventId,
         aspect,
@@ -537,8 +533,6 @@ export async function requestAspectRefinement(
         userAddress
       })
     })
-
-    clearTimeout(timeoutId) // Clear timeout on successful response
 
     if (!response.ok) {
       throw new Error(`Refinement failed: ${response.statusText}`)
@@ -552,10 +546,6 @@ export async function requestAspectRefinement(
       timestamp: new Date().toISOString()
     }
   } catch (error: any) {
-    if (error.name === 'AbortError') {
-      console.error('CURATION_SERVICE: Request timed out after 3 minutes')
-      throw new Error(`${aspect} refinement is taking longer than expected. The process is still running in the background.`)
-    }
     console.error('CURATION_SERVICE: Error refining aspect:', error)
     throw error
   }
@@ -1298,14 +1288,11 @@ export async function generateSocialContent(
 ): Promise<any> {
   try {
     console.log('CURATION_SERVICE: Generating', platform, 'content for event', eventId)
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 120000) // 120s budget for generation
     const response = await fetch(`${CURATION_API_BASE}/content`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      signal: controller.signal,
       body: JSON.stringify({
         eventId,
         userAddress,
@@ -1314,7 +1301,6 @@ export async function generateSocialContent(
         eventData
       })
     })
-    clearTimeout(timeoutId)
 
     if (!response.ok) {
       throw new Error(`Content generation failed: ${response.statusText}`)
@@ -1322,9 +1308,6 @@ export async function generateSocialContent(
 
     return await response.json()
   } catch (error) {
-    if ((error as any)?.name === 'AbortError') {
-      throw new Error(`${platform} content generation timed out. It continues in background; try preview again in a moment.`)
-    }
     console.error('CURATION_SERVICE: Error generating social content:', error)
     throw error
   }
@@ -1342,16 +1325,11 @@ export async function refineSocialContent(
   try {
     console.log('CURATION_SERVICE: Refining', platform, 'content for event', eventId)
 
-    // Create AbortController for timeout handling
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 90000) // 90 seconds timeout for content refinement
-
     const response = await fetch(`${CURATION_API_BASE}/content/iterate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      signal: controller.signal,
       body: JSON.stringify({
         eventId,
         platform,
@@ -1360,18 +1338,12 @@ export async function refineSocialContent(
       })
     })
 
-    clearTimeout(timeoutId) // Clear timeout on successful response
-
     if (!response.ok) {
       throw new Error(`Content refinement failed: ${response.statusText}`)
     }
 
     return await response.json()
   } catch (error: any) {
-    if (error.name === 'AbortError') {
-      console.error('CURATION_SERVICE: Content refinement timed out after 90 seconds')
-      throw new Error(`${platform} content refinement is taking longer than expected. The process is still running in the background.`)
-    }
     console.error('CURATION_SERVICE: Error refining social content:', error)
     throw error
   }

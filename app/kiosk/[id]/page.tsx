@@ -316,7 +316,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     loadPlanFromBlockchain()
   }, [params.id, userProfile?.address, event])
 
-  // Load promoter strategy via backend Pinata state (no blockchain)
+  // Load promoter strategy ONLY if it was previously accepted (not auto-generate)
   useEffect(() => {
     if (!userProfile?.address || !event || !curationDeployed || !curationPlan || curationPlan.status !== 'accepted') return
     let cancelled = false
@@ -325,8 +325,11 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         const { getPromoterStrategyState } = await import('../../services/curation')
         const state = await getPromoterStrategyState(params.id, userProfile.address)
         if (!state || cancelled) return
-        if (state.strategy) setPromoterStrategy(state.strategy)
-        if (state.status === 'accepted') setStrategyAccepted(true)
+        // Only load strategy if it was previously accepted (don't auto-generate)
+        if (state.status === 'accepted' && state.strategy) {
+          setPromoterStrategy(state.strategy)
+          setStrategyAccepted(true)
+        }
       } catch (e) {
         console.error('STRATEGY_STATE: Failed to load strategy state:', e)
       }
