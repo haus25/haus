@@ -66,24 +66,11 @@ export default function TicketKiosk() {
       }
 
       try {
-        console.log('OWNERSHIP_CHECK: Starting ticket ownership check for', events.length, 'events')
+        console.log('OWNERSHIP_CHECK: Starting batch ticket ownership check for', events.length, 'events')
         const ticketService = createTicketPurchaseService(walletClient)
-        const ownedTicketEventIds = new Set<number>()
 
-        // Check only first 10 events to prevent RPC overload
-        const eventsToCheck = events.slice(0, 10)
-        for (const event of eventsToCheck) {
-          try {
-            const hasTicket = await ticketService.userHasTicket(event.contractEventId, userProfile.address)
-            if (hasTicket) {
-              ownedTicketEventIds.add(event.contractEventId)
-              console.log('OWNERSHIP_CHECK: User owns ticket for event', event.contractEventId)
-            }
-          } catch (error) {
-            // Skip events that can't be checked
-            console.warn(`Could not check ticket ownership for event ${event.contractEventId}:`, error)
-          }
-        }
+        // Use the new batch check function
+        const ownedTicketEventIds = await ticketService.checkUserTicketsBatch(events, userProfile.address)
 
         console.log('OWNERSHIP_CHECK: Found', ownedTicketEventIds.size, 'owned tickets')
         setUserOwnedTickets(ownedTicketEventIds)
@@ -92,8 +79,8 @@ export default function TicketKiosk() {
       }
     }
 
-    // Debounce with longer delay to prevent rapid calls
-    const timeoutId = setTimeout(checkUserTickets, 2000)
+    // Debounce with delay to prevent rapid calls
+    const timeoutId = setTimeout(checkUserTickets, 1000)
     return () => clearTimeout(timeoutId)
   }, [events, isConnected, userProfile?.address, walletClient])
 
@@ -110,10 +97,10 @@ export default function TicketKiosk() {
         const curatedEventIds = new Set<number>()
 
         // Check only user's events for curation status, limit to first 5
-        const userEvents = events.filter(event => 
+        const userEvents = events.filter(event =>
           event.creatorAddress.toLowerCase() === userProfile.address.toLowerCase()
         ).slice(0, 5)
-        
+
         for (const event of userEvents) {
           try {
             const curationPlan = await getCurationPlanFromBlockchain(event.contractEventId.toString(), userProfile.address)
@@ -180,13 +167,13 @@ export default function TicketKiosk() {
       console.log("TICKET_PURCHASE: Creating ticket service...")
       const ticketService = createTicketPurchaseService(walletClient)
       console.log("TICKET_PURCHASE: Ticket service created successfully")
-      
+
       console.log("TICKET_PURCHASE: Using contract event ID:", eventId)
 
       // Check if user already has a ticket
       toast.loading("Checking ticket availability...")
       const alreadyHasTicket = await ticketService.userHasTicket(eventId, userProfile.address)
-      
+
       if (alreadyHasTicket) {
         toast.error("You already have a ticket for this event!")
         return
@@ -194,7 +181,7 @@ export default function TicketKiosk() {
 
       // Get sales info to show user the current status
       const salesInfo = await ticketService.getTicketSalesInfo(eventId)
-      
+
       if (salesInfo.remainingTickets <= 0) {
         toast.error("Sorry, this event is sold out!")
         return
@@ -240,10 +227,10 @@ export default function TicketKiosk() {
     } catch (error: any) {
       console.error("TICKET_PURCHASE: Error during ticket purchase:", error)
       toast.dismiss()  // Clear loading toasts
-      
+
       // Parse common error messages
       let errorMessage = error.message || "Failed to purchase ticket"
-      
+
       if (errorMessage.includes("insufficient")) {
         errorMessage = "Insufficient funds to purchase ticket"
       } else if (errorMessage.includes("sold out") || errorMessage.includes("All tickets sold")) {
@@ -376,7 +363,7 @@ export default function TicketKiosk() {
                 Loading events...
               </div>
             )}
-            
+
             <div className="flex items-center space-x-2">
               <Checkbox
                 id="show-past-events"
@@ -391,9 +378,9 @@ export default function TicketKiosk() {
               </label>
             </div>
 
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               onClick={refreshEvents}
               disabled={loading}
             >
@@ -441,28 +428,25 @@ export default function TicketKiosk() {
                   ].map((category) => (
                     <div
                       key={category.id}
-                      className={`group flex items-center p-2 rounded-md cursor-pointer transition-colors ${
-                        selectedCategories.includes(category.id as Category)
+                      className={`group flex items-center p-2 rounded-md cursor-pointer transition-colors ${selectedCategories.includes(category.id as Category)
                           ? "bg-primary/10 border-l-2 border-primary"
                           : "hover:bg-secondary"
-                      }`}
+                        }`}
                       onClick={() => toggleCategory(category.id as Category)}
                     >
                       <ArtCategoryIcon
                         category={category.id as Category}
                         size="sm"
-                        className={`mr-2 transition-colors ${
-                          selectedCategories.includes(category.id as Category)
+                        className={`mr-2 transition-colors ${selectedCategories.includes(category.id as Category)
                             ? "text-primary"
                             : "text-muted-foreground group-hover:text-contrast-foreground"
-                        }`}
+                          }`}
                       />
                       <span
-                        className={`text-sm font-medium transition-colors ${
-                          selectedCategories.includes(category.id as Category)
+                        className={`text-sm font-medium transition-colors ${selectedCategories.includes(category.id as Category)
                             ? "text-primary"
                             : "text-foreground group-hover:text-contrast-foreground"
-                        }`}
+                          }`}
                       >
                         {category.label}
                       </span>
@@ -530,10 +514,9 @@ export default function TicketKiosk() {
                         </div>
                         {/* Status badge */}
                         <div className="absolute top-2 left-2 bg-background/80 rounded-full px-2 py-1">
-                          <span className={`text-xs font-medium ${
-                            event.status === 'live' ? 'text-red-500' : 
-                            event.status === 'completed' ? 'text-gray-500' : 'text-green-500'
-                          }`}>
+                          <span className={`text-xs font-medium ${event.status === 'live' ? 'text-red-500' :
+                              event.status === 'completed' ? 'text-gray-500' : 'text-green-500'
+                            }`}>
                             {event.status.toUpperCase()}
                           </span>
                           {curatedEvents.has(event.contractEventId) && (
@@ -577,35 +560,34 @@ export default function TicketKiosk() {
                         </Button>
                         {isConnected && userProfile && event.creatorAddress.toLowerCase() === userProfile.address.toLowerCase() && event.status === 'upcoming' ? (
                           curatedEvents.has(event.contractEventId) ? (
-                            <Button 
-                              size="sm" 
-                              className="bg-green-600 text-white hover:bg-green-700 flex-1 min-w-0 text-xs sm:text-sm" 
+                            <Button
+                              size="sm"
+                              className="bg-green-600 text-white hover:bg-green-700 flex-1 min-w-0 text-xs sm:text-sm"
                               disabled
                             >
                               <Check className="h-4 w-4 mr-1 sm:mr-2 flex-shrink-0" />
                               <span className="truncate">Curated</span>
                             </Button>
                           ) : (
-                            <Button 
-                              size="sm" 
-                              className="bg-primary text-primary-foreground hover:bg-primary/90 flex-1 min-w-0 text-xs sm:text-sm" 
+                            <Button
+                              size="sm"
+                              className="bg-primary text-primary-foreground hover:bg-primary/90 flex-1 min-w-0 text-xs sm:text-sm"
                               onClick={() => router.push(`/kiosk/${event.contractEventId}`)}
                             >
                               <span className="truncate">Curate</span>
                             </Button>
                           )
                         ) : (
-                          <Button 
-                            size="sm" 
-                            className={`flex-1 min-w-0 text-xs sm:text-sm ${
-                              userOwnedTickets.has(event.contractEventId) 
-                                ? "bg-green-600 text-white hover:bg-green-700" 
+                          <Button
+                            size="sm"
+                            className={`flex-1 min-w-0 text-xs sm:text-sm ${userOwnedTickets.has(event.contractEventId)
+                                ? "bg-green-600 text-white hover:bg-green-700"
                                 : "bg-primary text-primary-foreground hover:bg-primary/90"
-                            }`}
+                              }`}
                             onClick={() => handleBuyTicket(event)}
                             disabled={
-                              event.status === 'completed' || 
-                              event.participants >= event.maxParticipants || 
+                              event.status === 'completed' ||
+                              event.participants >= event.maxParticipants ||
                               purchasingTickets.has(event.contractEventId) ||
                               userOwnedTickets.has(event.contractEventId)
                             }
@@ -638,7 +620,7 @@ export default function TicketKiosk() {
                   <div className="text-center py-12">
                     <h3 className="text-xl font-medium mb-2">No events found</h3>
                     <p className="text-muted-foreground mb-4">
-                      {events.length === 0 
+                      {events.length === 0
                         ? "No events have been created yet. Be the first to create an event!"
                         : "Try adjusting your search or category filters"
                       }

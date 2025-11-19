@@ -17,10 +17,10 @@ import { createEventFactoryService } from "../services/create"
 import { streamingService } from "../services/streaming"
 import { useLighthouseService, type EventStorageStatus } from "../services/lighthouse"
 import { useWalletClient } from "wagmi"
-import { 
-  Video, 
-  Users, 
-  Clock, 
+import {
+  Video,
+  Users,
+  Clock,
   Calendar,
   DollarSign,
   Crown,
@@ -57,7 +57,7 @@ export default function EventRoom() {
   // State management
   const [eventId, setEventId] = useState<string | null>(null)
   const [ticketId, setTicketId] = useState<string | null>(null)
-  
+
   // Simple 3-boolean logic as requested
   const [isCreator, setIsCreator] = useState(false)
   const [isParticipant, setIsParticipant] = useState(false)
@@ -77,7 +77,7 @@ export default function EventRoom() {
   const [customTipAmount, setCustomTipAmount] = useState("")
   const [showCustomTip, setShowCustomTip] = useState(false)
   const [isTipping, setIsTipping] = useState(false)
-  
+
   // Video player UI states
   const [isVideoExpanded, setIsVideoExpanded] = useState(false)
   const [showOverlayChat, setShowOverlayChat] = useState(true)
@@ -86,11 +86,11 @@ export default function EventRoom() {
   const [controlsVisible, setControlsVisible] = useState(false)
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null)
   const [isMuted, setIsMuted] = useState(false)
-  
+
   // Tipping data
   const [currentTippedAmount, setCurrentTippedAmount] = useState("0")
   const [reserveProgress, setReserveProgress] = useState(0)
-  
+
   // Lighthouse storage tracking
   const lighthouseService = useLighthouseService()
   const [storageStatus, setStorageStatus] = useState<EventStorageStatus | null>(null)
@@ -131,14 +131,14 @@ export default function EventRoom() {
 
       try {
         const ticketService = createTicketService(walletClient)
-        
+
         // Check if user is the creator of this event
         const eventDetails = await ticketService.getEventDetails(Number(eventId))
         const userIsCreator = eventDetails.creator.toLowerCase() === userProfile.address.toLowerCase()
-        
+
         // Get all participants (creator + ticket holders) for chat
         const participants = [eventDetails.creator.toLowerCase()]
-        
+
         if (userIsCreator) {
           // User is the creator
           setIsCreator(true)
@@ -149,10 +149,10 @@ export default function EventRoom() {
           // User is a participant - check for ticket
           setIsCreator(false)
           setIsParticipant(true)
-          
+
           const userHasTicket = await ticketService.userHasTicket(Number(eventId), userProfile.address)
           setHasTicket(userHasTicket)
-          
+
           if (userHasTicket) {
             setStreamStatus(prev => ({ ...prev, hasAccess: true }))
             participants.push(userProfile.address.toLowerCase())
@@ -162,7 +162,7 @@ export default function EventRoom() {
             console.log('EVENT_ROOM: User does not have a ticket for this event')
           }
         }
-        
+
         // Store participants for chat initialization
         setParticipantAddresses(participants)
 
@@ -188,7 +188,7 @@ export default function EventRoom() {
 
       try {
         console.log('ROOM: Initializing WebSocket chat for event:', eventId)
-        
+
         // Initialize chat with WebSocket connection
         const history = await eventChatService.initializeEventChat(
           eventId,
@@ -202,13 +202,13 @@ export default function EventRoom() {
             setChatMessages(prev => [...prev, newMessage])
           }
         )
-        
+
         // Load message history
         setChatMessages(history)
         setIsChatInitialized(true)
-        
+
         console.log('ROOM: WebSocket chat initialized')
-        
+
       } catch (error) {
         console.error('ROOM: Error initializing chat:', error)
         // Don't show error to user, chat is secondary functionality
@@ -236,9 +236,9 @@ export default function EventRoom() {
       try {
         const tippingData = await getEventTippingData(eventId)
         console.log('ROOM: Tipping data loaded:', tippingData)
-        
+
         setCurrentTippedAmount(tippingData.totalTips)
-        
+
         // Calculate progress percentage
         if (eventData?.reservePrice) {
           const progress = (parseFloat(tippingData.totalTips) / parseFloat(eventData.reservePrice)) * 100
@@ -251,7 +251,7 @@ export default function EventRoom() {
 
     if (eventData) {
       loadTippingData()
-      
+
       // Refresh tipping data every 30 seconds when stream is live
       if (streamStatus.isLive) {
         const interval = setInterval(loadTippingData, 30000)
@@ -269,10 +269,9 @@ export default function EventRoom() {
         setIsLoadingEvent(true)
         console.log('EVENT_ROOM: Loading event data for ID:', eventId)
 
-        // Fetch all events and find the one matching the ID
-        const { fetchOnChainEvents } = await import('../services/tickets')
-        const events = await fetchOnChainEvents()
-        const targetEvent = events.find(e => e.contractEventId === parseInt(eventId))
+        // Fetch specific event data efficiently
+        const ticketService = createTicketService(walletClient)
+        const targetEvent = await ticketService.fetchEventById(parseInt(eventId))
 
         if (!targetEvent) {
           console.error('EVENT_ROOM: Event not found for ID:', eventId)
@@ -293,7 +292,8 @@ export default function EventRoom() {
         console.log('EVENT_ROOM: Backend availability:', availability)
 
         // Validate event timing against blockchain data
-        const ticketService = createTicketService(walletClient)
+        // Validate event timing against blockchain data
+        // const ticketService = createTicketService(walletClient) // Already declared above
         const timingValidation = await ticketService.validateEventTiming(Number(eventId))
         console.log('EVENT_ROOM: Blockchain timing validation:', timingValidation)
 
@@ -404,7 +404,7 @@ export default function EventRoom() {
 
     checkStorageStatus()
     const interval = setInterval(checkStorageStatus, 15000) // Check every 15 seconds
-    
+
     return () => clearInterval(interval)
   }, [eventId, isCreator, lighthouseService])
 
@@ -430,7 +430,7 @@ export default function EventRoom() {
     console.log('ROOM: Event data:', !!eventData)
     console.log('ROOM: Has ticket:', hasTicket)
     console.log('ROOM: Is creator:', isCreator)
-    
+
     if (!userProfile || !walletClient || !eventData) {
       toast.error('Please connect your wallet to send tips')
       return
@@ -444,28 +444,28 @@ export default function EventRoom() {
     try {
       setIsTipping(true)
       setTipAmount(amount.toString())
-      
+
       console.log('ROOM: Calling sendTip with eventId:', eventId, 'amount:', amount)
       const hash = await sendTip(eventId!, amount.toString(), "", walletClient)
       console.log('ROOM: Tip transaction hash:', hash)
       toast.success(`Tip of ${amount} SEI sent successfully!`)
-      
+
       // Add tip message to chat
       if (isChatInitialized && userProfile?.address) {
         eventChatService.addTipMessage(eventId!, userProfile.address, amount)
       }
-      
+
       // Refresh tipping data after successful tip
       setTimeout(async () => {
         try {
           const tippingData = await getEventTippingData(eventId!)
           setCurrentTippedAmount(tippingData.totalTips)
-          
+
           if (eventData?.reservePrice) {
             const progress = (parseFloat(tippingData.totalTips) / parseFloat(eventData.reservePrice)) * 100
             const newProgress = Math.min(progress, 100)
             setReserveProgress(newProgress)
-            
+
             // Check if reserve price was just hit
             if (newProgress >= 100 && reserveProgress < 100 && isChatInitialized) {
               eventChatService.addReservePriceHitMessage(eventId!)
@@ -475,7 +475,7 @@ export default function EventRoom() {
           console.error('ROOM: Error refreshing tipping data:', refreshError)
         }
       }, 2000) // Wait 2 seconds for blockchain confirmation
-      
+
     } catch (error) {
       console.error("ROOM: Error sending tip:", error)
       toast.error(error instanceof Error ? error.message : 'Failed to send tip')
@@ -489,16 +489,16 @@ export default function EventRoom() {
   const handleVideoMouseMove = () => {
     setIsHoveringVideo(true)
     setControlsVisible(true)
-    
+
     if (controlsTimeout) {
       clearTimeout(controlsTimeout)
     }
-    
+
     if (isVideoExpanded) {
       const timeout = setTimeout(() => {
         setControlsVisible(false)
       }, 3000)
-      
+
       setControlsTimeout(timeout)
     }
   }
@@ -515,7 +515,7 @@ export default function EventRoom() {
   // Get time until event starts/ends
   const getEventTiming = () => {
     if (!eventData) return { status: 'loading', timeText: '' }
-    
+
     const now = new Date()
     const startTime = new Date(eventData.startDate)
     const endTime = new Date(eventData.startDate + eventData.eventDuration * 1000)
@@ -524,17 +524,17 @@ export default function EventRoom() {
       const timeUntilStart = startTime.getTime() - now.getTime()
       const hours = Math.floor(timeUntilStart / (1000 * 60 * 60))
       const minutes = Math.floor((timeUntilStart % (1000 * 60 * 60)) / (1000 * 60))
-      return { 
-        status: 'upcoming', 
-        timeText: `Starts in ${hours > 0 ? `${hours}h ` : ''}${minutes}m` 
+      return {
+        status: 'upcoming',
+        timeText: `Starts in ${hours > 0 ? `${hours}h ` : ''}${minutes}m`
       }
     } else if (now <= endTime) {
       const timeUntilEnd = endTime.getTime() - now.getTime()
       const hours = Math.floor(timeUntilEnd / (1000 * 60 * 60))
       const minutes = Math.floor((timeUntilEnd % (1000 * 60 * 60)) / (1000 * 60))
-      return { 
-        status: 'live', 
-        timeText: `${hours > 0 ? `${hours}h ` : ''}${minutes}m remaining` 
+      return {
+        status: 'live',
+        timeText: `${hours > 0 ? `${hours}h ` : ''}${minutes}m remaining`
       }
     } else {
       return { status: 'ended', timeText: 'Event ended' }
@@ -645,19 +645,18 @@ export default function EventRoom() {
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
                   <h1 className="text-3xl font-bold text-foreground">{eventData.title || `Event #${eventId}`}</h1>
-                  <Badge 
+                  <Badge
                     variant={eventTiming.status === 'live' ? 'default' : eventTiming.status === 'upcoming' ? 'secondary' : 'outline'}
-                    className={`${
-                      eventTiming.status === 'live' 
-                        ? 'bg-primary text-primary-foreground animate-pulse border-primary' 
-                        : 'bg-secondary text-secondary-foreground border-secondary'
-                    }`}
+                    className={`${eventTiming.status === 'live'
+                      ? 'bg-primary text-primary-foreground animate-pulse border-primary'
+                      : 'bg-secondary text-secondary-foreground border-secondary'
+                      }`}
                   >
                     {eventTiming.status === 'live' && <Video className="h-3 w-3 mr-1" />}
                     {eventTiming.status.toUpperCase()}
                   </Badge>
                 </div>
-                
+
                 {eventData.description && (
                   <p className="text-muted-foreground mb-4">{eventData.description}</p>
                 )}
@@ -700,10 +699,10 @@ export default function EventRoom() {
 
         {/* Main Content Layout */}
         <div className={`${isVideoExpanded ? 'relative w-full h-full' : 'grid grid-cols-1 lg:grid-cols-4 gap-6'}`}>
-          
+
           {/* Video Player Section */}
           <div className={`${isVideoExpanded ? 'absolute inset-0 w-full h-full' : 'lg:col-span-3'}`}>
-            <div 
+            <div
               className={`relative ${isVideoExpanded ? 'w-full h-full' : ''}`}
               onMouseMove={handleVideoMouseMove}
               onMouseLeave={handleVideoMouseLeave}
@@ -718,7 +717,7 @@ export default function EventRoom() {
                   onStreamStatusChange={handleStreamStatusChange}
                 />
               </div>
-              
+
               {/* Video Controls Overlay - only shown on hover */}
               {(isHoveringVideo || controlsVisible) && (
                 <div className="absolute inset-0 pointer-events-none">
@@ -731,7 +730,7 @@ export default function EventRoom() {
                         {streamStatus.viewerCount}
                       </div>
                     </div>
-                    
+
                     {/* Expand/Minimize Button */}
                     <Button
                       variant="ghost"
@@ -787,7 +786,7 @@ export default function EventRoom() {
                 </div>
               )}
             </div>
-            
+
             {/* Reserve Price Progress - below video in normal view */}
             {!isVideoExpanded && (
               <div className="mt-4 space-y-3">
@@ -799,8 +798,8 @@ export default function EventRoom() {
                     </span>
                   </div>
                   <div className="mt-2 w-full bg-accent rounded-full h-2">
-                    <div 
-                      className="bg-primary h-2 rounded-full transition-all duration-300" 
+                    <div
+                      className="bg-primary h-2 rounded-full transition-all duration-300"
                       style={{ width: `${reserveProgress}%` }}
                     ></div>
                   </div>
@@ -820,7 +819,7 @@ export default function EventRoom() {
                         Custom
                       </Button>
                     </div>
-                    
+
                     <div className="flex items-center gap-2">
                       {[2, 5, 10].map((amount) => (
                         <Button
@@ -908,21 +907,21 @@ export default function EventRoom() {
                         <Crown className="h-4 w-4 text-primary" />
                         <span className="text-card-foreground">You are the event creator</span>
                       </div>
-                      
+
                       {/* Lighthouse Storage Status */}
                       {storageStatus && (
                         <div className="pt-2 border-t border-border">
                           <div className="flex items-center justify-between text-xs">
                             <span className="font-medium">Video Storage:</span>
-                            <Badge 
-                              variant={storageStatus.status === 'active' ? 'default' : 
-                                      storageStatus.status === 'completed' ? 'secondary' : 'destructive'}
+                            <Badge
+                              variant={storageStatus.status === 'active' ? 'default' :
+                                storageStatus.status === 'completed' ? 'secondary' : 'destructive'}
                               className="text-xs"
                             >
                               {storageStatus.status}
                             </Badge>
                           </div>
-                          
+
                           {storageStatus.status === 'active' && (
                             <div className="mt-1 space-y-1">
                               <div className="flex justify-between text-xs text-muted-foreground">
@@ -935,7 +934,7 @@ export default function EventRoom() {
                               </div>
                             </div>
                           )}
-                          
+
                           {storageStatus.status === 'completed' && (
                             <div className="mt-1 text-xs text-muted-foreground">
                               Final: {storageStatus.totalChunks} chunks ({storageStatus.totalSizeMB.toFixed(1)} MB)
@@ -952,9 +951,9 @@ export default function EventRoom() {
                   )}
 
                   {!isCreator && !hasTicket && (
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
+                    <Button
+                      size="sm"
+                      variant="outline"
                       className="w-full mt-2 border-border text-foreground hover:bg-accent"
                       onClick={() => router.push(`/kiosk/${eventId}`)}
                     >
@@ -1013,13 +1012,13 @@ export default function EventRoom() {
                   <span className="font-medium">Reserve Price:</span>
                   <span>{currentTippedAmount} / {eventData.reservePrice} SEI</span>
                   <div className="w-32 bg-gray-600 rounded-full h-2">
-                    <div 
-                      className="bg-primary h-2 rounded-full transition-all duration-300" 
+                    <div
+                      className="bg-primary h-2 rounded-full transition-all duration-300"
                       style={{ width: `${reserveProgress}%` }}
                     ></div>
                   </div>
                 </div>
-                
+
                 {/* Quick tip buttons */}
                 <div className="flex items-center gap-2">
                   {[2, 5, 10].map((amount) => (
@@ -1035,7 +1034,7 @@ export default function EventRoom() {
                       {amount}
                     </Button>
                   ))}
-                  
+
                   {/* Custom Amount Button */}
                   <Button
                     variant="ghost"
@@ -1045,7 +1044,7 @@ export default function EventRoom() {
                   >
                     Custom
                   </Button>
-                  
+
                   <Button
                     variant="ghost"
                     size="icon"
@@ -1069,7 +1068,7 @@ export default function EventRoom() {
                 <Input
                   type="number"
                   value={customTipAmount}
-                                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomTipAmount(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomTipAmount(e.target.value)}
                   placeholder="Enter SEI amount"
                   className="w-32 bg-white/10 border-white/20 text-white placeholder:text-white/50"
                   min="0.1"

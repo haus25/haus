@@ -12,11 +12,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "../../components/ui/avatar"
 import { Input } from "../../components/ui/input"
 import { Textarea } from "../../components/ui/textarea"
 
-import { 
-  Calendar, 
-  MapPin, 
-  Users, 
-  DollarSign, 
+import {
+  Calendar,
+  MapPin,
+  Users,
+  DollarSign,
   Clock,
   Heart,
   Share2,
@@ -38,10 +38,10 @@ import { toast } from "sonner"
 import { fetchOnChainEvents, type OnChainEventData, createTicketPurchaseService, TicketService } from "../../services/tickets"
 import { useAuth } from "../../contexts/auth"
 import { useWalletClient } from 'wagmi'
-import { 
-  deployCurationContract, 
-  getCurationScopes, 
-  requestCurationPlan, 
+import {
+  deployCurationContract,
+  getCurationScopes,
+  requestCurationPlan,
   sendCurationMessage,
   hasCurationDeployed,
   getCurationPlanFromBlockchain,
@@ -57,7 +57,7 @@ import {
   refineSocialContent,
   approveSocialContent,
   getContentLimits,
-  
+
 } from "../../services/curation"
 
 // Import tab components
@@ -86,12 +86,12 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const [isDeployingCuration, setIsDeployingCuration] = useState(false)
   const [curationPlan, setCurationPlan] = useState<CurationResult | null>(null)
   const [expandedDiscussion, setExpandedDiscussion] = useState<string | null>(null)
-  const [discussionMessages, setDiscussionMessages] = useState<Record<string, Array<{role: string, content: string}>>>({})
+  const [discussionMessages, setDiscussionMessages] = useState<Record<string, Array<{ role: string, content: string }>>>({})
   const [isDiscussing, setIsDiscussing] = useState(false)
   const [isRequestingPlan, setIsRequestingPlan] = useState(false)
   const [externalBannerGenerating, setExternalBannerGenerating] = useState(false)
   const [planProgress, setPlanProgress] = useState<any | null>(null)
-  const [agentStatus, setAgentStatus] = useState<Record<string, 'idle'|'running'|'done'|'error'>>({
+  const [agentStatus, setAgentStatus] = useState<Record<string, 'idle' | 'running' | 'done' | 'error'>>({
     title: 'idle',
     description: 'idle',
     pricing: 'idle',
@@ -101,7 +101,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const [isAcceptingPlan, setIsAcceptingPlan] = useState(false)
   const [selectedIterations, setSelectedIterations] = useState<Record<string, number>>({
     banner: 0,
-    title: 0, 
+    title: 0,
     description: 0,
     schedule: 0,
     pricing: 0
@@ -124,7 +124,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     eventbrite: { daily: 999999, total: 1, used: { daily: 0, total: 0 } }
   })
   const [expandedStrategyDiscussion, setExpandedStrategyDiscussion] = useState<string | null>(null)
-  const [strategyDiscussionMessages, setStrategyDiscussionMessages] = useState<Record<string, Array<{role: string, content: string}>>>({})
+  const [strategyDiscussionMessages, setStrategyDiscussionMessages] = useState<Record<string, Array<{ role: string, content: string }>>>({})
   const [isDiscussingStrategy, setIsDiscussingStrategy] = useState(false)
 
 
@@ -147,14 +147,14 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           typeof userProfile.address === 'string' &&
           typeof event.creatorAddress === 'string' &&
           event.creatorAddress.toLowerCase() === userProfile.address.toLowerCase();
-        
-        console.log('AUTH_PERSISTENCE: Checking creator status', { 
-          isConnected, 
-          userAddress: userProfile.address, 
+
+        console.log('AUTH_PERSISTENCE: Checking creator status', {
+          isConnected,
+          userAddress: userProfile.address,
           creatorAddress: event.creatorAddress,
-          isCreator 
+          isCreator
         })
-        
+
         setIsCreatorConfirmed(isCreator ? true : false);
 
         // Persist creator status in localStorage for this event with timestamp
@@ -176,17 +176,17 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         // Check localStorage for creator status when not connected
         const storedKeys = Object.keys(localStorage).filter(key => key.startsWith(`creator_${params.id}_`))
         let hasValidCreatorStatus = false
-        
+
         for (const key of storedKeys) {
           try {
             const stored = localStorage.getItem(key)
             if (stored) {
               const creatorData = JSON.parse(stored)
               // Check if stored data is recent (within 24 hours) and valid
-              if (creatorData.timestamp && 
-                  Date.now() - creatorData.timestamp < 24 * 60 * 60 * 1000 &&
-                  creatorData.eventId === params.id &&
-                  creatorData.creatorAddress === event.creatorAddress) {
+              if (creatorData.timestamp &&
+                Date.now() - creatorData.timestamp < 24 * 60 * 60 * 1000 &&
+                creatorData.eventId === params.id &&
+                creatorData.creatorAddress === event.creatorAddress) {
                 hasValidCreatorStatus = true
                 console.log('AUTH_PERSISTENCE: Found valid stored creator status', creatorData)
                 break
@@ -200,7 +200,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             localStorage.removeItem(key)
           }
         }
-        
+
         setIsCreatorConfirmed(hasValidCreatorStatus)
       }
     }
@@ -210,7 +210,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
 
     // Also check periodically to handle auth state changes
     const interval = setInterval(checkCreatorStatus, 3000)
-    
+
     return () => clearInterval(interval)
   }, [authLoading, isConnected, userProfile, event, params.id])
 
@@ -218,57 +218,24 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     const loadEventData = async () => {
       try {
         console.log('TICKET_DETAIL: Loading event data for ID:', params.id)
-        
-        // Fetch all events and find the one matching the ID
-        let targetEvent: OnChainEventData | undefined
+
+        // Fetch specific event data efficiently
+        let targetEvent: OnChainEventData | null = null
         try {
-          const events = await fetchOnChainEvents()
-          targetEvent = events.find(e => e.contractEventId === parseInt(params.id))
+          const svc = new TicketService()
+          targetEvent = await svc.fetchEventById(parseInt(params.id))
         } catch (err) {
-          console.warn('TICKET_DETAIL: Bulk events fetch failed, will fallback to single fetch', err)
+          console.error('TICKET_DETAIL: Event fetch failed:', err)
         }
-        
-        // Fallback: try single event fetch to reduce RPC load (avoid 429)
-        if (!targetEvent) {
-          try {
-            const svc = new TicketService()
-            const ed = await svc.getEventDetails(parseInt(params.id))
-            const ipfsHash = ed.metadataURI?.startsWith('ipfs://') ? ed.metadataURI.slice(7) : ed.metadataURI
-            const metaUrl = ipfsHash ? `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${ipfsHash}` : ''
-            const meta = metaUrl ? await (await fetch(metaUrl)).json() : {}
-            targetEvent = {
-              id: params.id,
-              contractEventId: parseInt(params.id),
-              title: meta.name || `Event #${params.id}`,
-              description: meta.description || '',
-              creator: ed.creator,
-              creatorAddress: ed.creator,
-              category: meta.category || 'performance-art',
-              date: new Date(ed.startDate * 1000).toISOString(),
-              duration: ed.eventDuration,
-              reservePrice: Number(ed.reservePrice),
-              ticketPrice: 0,
-              maxParticipants: 0,
-              participants: 0,
-              image: meta.image ? meta.image.replace('ipfs://', `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/`) : '/placeholder.svg',
-              status: 'upcoming',
-              finalized: ed.finalized,
-              ticketKioskAddress: ed.ticketKioskAddress,
-              eventMetadataURI: ed.metadataURI
-            }
-          } catch (err2) {
-            console.error('TICKET_DETAIL: Single event fallback failed:', err2)
-          }
-        }
-        
+
         if (targetEvent) {
           setEvent(targetEvent)
           console.log('TICKET_DETAIL: Event found:', targetEvent.title)
-          
+
           // Check if curation is already deployed
           const hasCuration = await hasCurationDeployed(params.id)
           setCurationDeployed(hasCuration)
-          
+
         } else {
           console.error('TICKET_DETAIL: Event not found for ID:', params.id)
           toast.error('Event not found')
@@ -287,7 +254,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   // Load curation plan from blockchain when user profile is available
   useEffect(() => {
     if (!userProfile?.address || !event) return
-    
+
     const loadPlanFromBlockchain = async () => {
       console.log('CURATION_BLOCKCHAIN: Checking for on-chain plan...')
       try {
@@ -295,24 +262,24 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         if (blockchainPlan) {
           console.log('CURATION_BLOCKCHAIN: Found on-chain plan, loading iterations')
           setCurationPlan(blockchainPlan)
-          
+
           // Load iteration counts for UI display
           const aspects = ['banner', 'title', 'description', 'schedule', 'pricing']
           const iterationCounts: Record<string, number> = {}
-          
+
           for (const aspect of aspects) {
             const iterations = await getAspectIterations(params.id, aspect)
             const iterationNumbers = Object.keys(iterations).map(Number).filter(n => !isNaN(n))
             iterationCounts[aspect] = iterationNumbers.length > 0 ? Math.max(...iterationNumbers) : 0
           }
-          
+
           setSelectedIterations(iterationCounts)
         }
       } catch (error) {
         console.error('CURATION_BLOCKCHAIN: Error loading plan from blockchain:', error)
       }
     }
-    
+
     loadPlanFromBlockchain()
   }, [params.id, userProfile?.address, event])
 
@@ -363,7 +330,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
 
       // Check if user already has a ticket
       const alreadyHasTicket = await ticketService.userHasTicket(event.contractEventId, userProfile.address)
-      
+
       if (alreadyHasTicket) {
         toast.error("You already have a ticket for this event!")
         return
@@ -371,7 +338,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
 
       // Get sales info to show user the current status
       const salesInfo = await ticketService.getTicketSalesInfo(event.contractEventId)
-      
+
       if (salesInfo.remainingTickets <= 0) {
         toast.error("Sorry, this event is sold out!")
         return
@@ -402,9 +369,9 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     } catch (error: any) {
       console.error("TICKET_PURCHASE: Error during ticket purchase:", error)
       toast.dismiss()  // Clear loading toasts
-      
+
       let errorMessage = error.message || "Failed to purchase ticket"
-      
+
       if (errorMessage.includes("insufficient")) {
         errorMessage = "Insufficient funds to purchase ticket"
       } else if (errorMessage.includes("sold out") || errorMessage.includes("All tickets sold")) {
@@ -442,25 +409,25 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     }
 
     setIsDeployingCuration(true)
-    
+
     try {
       const scopeMap = { 'planner': 1, 'promoter': 2, 'producer': 3 }
       const scope = scopeMap[selectedCuration]
-      
+
       toast.loading("Deploying curation contract...")
-      
+
       const result = await deployCurationContract(
         params.id,
         scope,
         `${selectedCuration} curation for ${event.title}`
       )
-      
+
       toast.dismiss()
       toast.success(`🎨 Curation contract deployed successfully!\n\nTx: ${result.txHash.slice(0, 8)}...`)
-      
+
       setCurationDeployed(true)
       setIsCurationExpanded(false)
-      
+
     } catch (error: any) {
       console.error("CURATION_DEPLOY: Error:", error)
       toast.dismiss()
@@ -477,7 +444,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     }
 
     setIsRequestingPlan(true)
-    
+
     try {
       toast.loading("🎨 Generating curation plan...")
       setAgentStatus({ title: 'running', description: 'running', pricing: 'running', schedule: 'running', banner: 'running' })
@@ -513,7 +480,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         setExternalBannerGenerating(false)
         return
       }
-      
+
       // Subscribe to progress stream
       const unsubscribe = streamCurationProgress(jobId, async (update: any) => {
         setPlanProgress(update)
@@ -521,7 +488,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         if (update?.steps?.banner === 'completed' && !getDisplayValue('banner')) {
           setExternalBannerGenerating(true)
         }
-        const stageMap: Record<string,string> = { context: 'context', title: 'title', schedule: 'schedule', description: 'description', pricing: 'pricing', banner: 'banner' }
+        const stageMap: Record<string, string> = { context: 'context', title: 'title', schedule: 'schedule', description: 'description', pricing: 'pricing', banner: 'banner' }
         if (update?.steps) {
           const newStatus = { ...agentStatus }
           for (const k of Object.keys(stageMap)) {
@@ -531,7 +498,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           setAgentStatus(newStatus)
         }
         // When all store_* steps done, fetch from chain
-        const storeDone = ['store_title','store_description','store_pricing','store_schedule','store_banner']
+        const storeDone = ['store_title', 'store_description', 'store_pricing', 'store_schedule', 'store_banner']
           .every(k => update?.steps?.[k] === 'completed')
         if (update.status === 'completed' || storeDone) {
           try {
@@ -557,8 +524,8 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       const pollStart = Date.now()
       const poll = async () => {
         try {
-          const aspects: Array<keyof typeof agentStatus> = ['title','description','pricing','schedule','banner']
-          const updates: Record<string,'idle'|'running'|'done'|'error'> = { ...agentStatus }
+          const aspects: Array<keyof typeof agentStatus> = ['title', 'description', 'pricing', 'schedule', 'banner']
+          const updates: Record<string, 'idle' | 'running' | 'done' | 'error'> = { ...agentStatus }
           for (const aspect of aspects) {
             if (updates[aspect] === 'done') continue
             const its = await getAspectIterations(params.id, aspect)
@@ -586,7 +553,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         if (Date.now() - pollStart < 180000) setTimeout(poll, 10000)
       }
       setTimeout(poll, 10000)
-      
+
     } catch (error: any) {
       console.error("CURATION_REQUEST: Error:", error)
       toast.dismiss()
@@ -603,40 +570,41 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     }
 
     setIsAcceptingPlan(true)
-    
+
     try {
       toast.loading("🎉 Accepting plan and updating blockchain...")
-      
+
       // Accept the curation proposal - this will trigger blockchain update
       const result = await acceptCurationProposal(
         params.id,
         selectedIterations,
         userProfile.address
       )
-      
+
       toast.dismiss()
-      
+
       if (result.success) {
         toast.success(`✅ Plan accepted successfully!\n\n🔗 Tx: ${result.transactionHash?.slice(0, 8)}...\n📝 Metadata updated on-chain`)
-        
+
         // Immediately update the curation plan status for UI responsiveness
-              if (curationPlan) {
-                setCurationPlan({
-                  ...curationPlan,
-                  status: 'accepted',
-                  curation: {
-                    ...curationPlan.curation,
-                    iterations: undefined // Remove iterations after acceptance
-                  }
-                })
-              }
-        
+        if (curationPlan) {
+          setCurationPlan({
+            ...curationPlan,
+            status: 'accepted',
+            curation: {
+              ...curationPlan.curation,
+              iterations: undefined // Remove iterations after acceptance
+            }
+          })
+        }
+
         // Also refresh blockchain data in the background for consistency
         setTimeout(async () => {
           try {
             console.log('EVENT_UPDATE: Refreshing event data after plan acceptance...')
-            const events = await fetchOnChainEvents()
-            const updatedEvent = events.find(e => e.contractEventId === parseInt(params.id))
+            console.log('EVENT_UPDATE: Refreshing event data after plan acceptance...')
+            const svc = new TicketService()
+            const updatedEvent = await svc.fetchEventById(parseInt(params.id))
             if (updatedEvent) {
               setEvent(updatedEvent)
               console.log('EVENT_UPDATE: Event metadata updated after plan acceptance')
@@ -648,7 +616,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       } else {
         throw new Error(result.error || 'Failed to accept plan')
       }
-      
+
     } catch (error: any) {
       console.error("ACCEPT_PLAN: Error:", error)
       toast.dismiss()
@@ -665,7 +633,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     }
 
     setIsDiscussing(true)
-    
+
     try {
       // Add user message to local state immediately
       setDiscussionMessages(prev => ({
@@ -680,20 +648,20 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       if (aspect === 'banner') {
         toast.loading(`🎨 Starting banner generation... up to 2-3 mins`, { duration: 8000 })
         setExternalBannerGenerating(true)
-        
+
         // Start banner polling mechanism
         startBannerPolling(aspect, message)
       } else {
         toast.loading(`Discussing ${aspect} refinement...`)
       }
-      
+
       const result = await requestAspectRefinement(
         params.id,
         aspect,
         message,
         userProfile.address
       )
-      
+
       // Add agent response to local state
       setDiscussionMessages(prev => ({
         ...prev,
@@ -716,13 +684,13 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       // Reload the plan from blockchain to get updated iterations
       if (result.success && result.iterationNumber) {
         console.log(`ITERATION_UPDATE: New iteration ${result.iterationNumber} created for ${aspect}`)
-        
+
         try {
           // Reload plan from blockchain to get updated iterations
           const updatedPlan = await getCurationPlanFromBlockchain(params.id, userProfile.address)
           if (updatedPlan) {
             setCurationPlan(updatedPlan)
-            
+
             // Update selected iteration to the new one
             setSelectedIterations(prev => ({
               ...prev,
@@ -733,14 +701,14 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           console.error('ITERATION_UPDATE: Failed to reload plan from blockchain:', error)
         }
       }
-      
+
       toast.dismiss()
       toast.success(`✨ ${aspect} refined successfully!`)
-      
+
     } catch (error: any) {
       console.error(`DISCUSSION_${aspect.toUpperCase()}: Error:`, error)
       toast.dismiss()
-      
+
       if (aspect === 'banner' && error.message?.includes('longer than expected')) {
         toast.success(`🎨 Banner generation continues in background. Please wait 2-3 minutes...`, { duration: 15000 })
         setExternalBannerGenerating(true)
@@ -756,18 +724,18 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   // Banner polling mechanism
   const startBannerPolling = (aspect: string, message: string) => {
     if (!userProfile?.address) return
-    
+
     const pollInterval = setInterval(async () => {
       try {
         const { pollForBannerCompletion } = await import('../../services/curation')
         const currentIteration = selectedIterations[aspect] || 1
-        
+
         const result = await pollForBannerCompletion(params.id, userProfile.address, currentIteration)
-        
+
         if (result.completed && result.newIteration) {
           clearInterval(pollInterval)
           setExternalBannerGenerating(false)
-          
+
           // Update the plan with new iteration
           try {
             const updatedPlan = await getCurationPlanFromBlockchain(params.id, userProfile.address)
@@ -781,10 +749,10 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           } catch (error) {
             console.error('BANNER_POLL: Failed to reload plan:', error)
           }
-          
+
           toast.dismiss()
           toast.success(`🎨 New banner generated successfully!`, { duration: 8000 })
-          
+
           // Add completion message to discussion
           setDiscussionMessages(prev => ({
             ...prev,
@@ -800,7 +768,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         console.error('BANNER_POLL: Polling failed:', error)
       }
     }, 15000) // Poll every 15 seconds
-    
+
     // Stop polling after 5 minutes maximum
     setTimeout(() => {
       clearInterval(pollInterval)
@@ -823,10 +791,10 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     }
 
     setIsGeneratingStrategy(true)
-    
+
     try {
       toast.loading("🎯 Generating promotional strategy with AI agents...")
-      
+
       const eventData = {
         eventId: params.id,
         title: event.title,
@@ -842,18 +810,18 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           reservePrice: event.reservePrice
         }
       }
-      
+
       const strategyResult = await generatePromoterStrategy(
         params.id,
         userProfile.address,
         eventData
       )
-      
+
       setPromoterStrategy(strategyResult.strategy)
-      
+
       toast.dismiss()
       toast.success("🎯 Promotional strategy generated successfully!")
-      
+
     } catch (error: any) {
       console.error("STRATEGY_GENERATION: Error:", error)
       toast.dismiss()
@@ -870,20 +838,20 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     }
 
     setIsAcceptingStrategy(true)
-    
+
     try {
       toast.loading("✅ Accepting strategy...")
-      
+
       const result = await acceptPromoterStrategy(
         params.id,
         userProfile.address,
         promoterStrategy
       )
-      
+
       setStrategyAccepted(true)
       toast.dismiss()
       toast.success("✅ Strategy accepted! Content tab is now available.")
-      
+
     } catch (error: any) {
       console.error("STRATEGY_ACCEPT: Error:", error)
       toast.dismiss()
@@ -900,10 +868,10 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     }
 
     setIsGeneratingContent(prev => ({ ...prev, [platform]: true }))
-    
+
     try {
       toast.loading(`📱 Generating ${platform} content...`)
-      
+
       const eventData = {
         eventId: params.id,
         title: event.title,
@@ -919,7 +887,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           reservePrice: event.reservePrice
         }
       }
-      
+
       const contentResult = await generateSocialContent(
         params.id,
         userProfile.address,
@@ -927,13 +895,13 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         promoterStrategy,
         eventData
       )
-      
+
       setSocialContent(prev => ({ ...prev, [platform]: contentResult.content }))
       setContentIterations(prev => ({ ...prev, [platform]: 1 }))
-      
+
       toast.dismiss()
       toast.success(`📱 ${platform} content generated successfully!`)
-      
+
     } catch (error: any) {
       console.error(`CONTENT_GENERATION_${platform.toUpperCase()}: Error:`, error)
       toast.dismiss()
@@ -951,20 +919,20 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
 
     try {
       toast.loading(`🔄 Refining ${platform} content...`)
-      
+
       const result = await refineSocialContent(
         params.id,
         platform,
         feedback,
         userProfile.address
       )
-      
+
       setSocialContent(prev => ({ ...prev, [platform]: result.refinedContent }))
       setContentIterations(prev => ({ ...prev, [platform]: (prev[platform] || 1) + 1 }))
-      
+
       toast.dismiss()
       toast.success(`🔄 ${platform} content refined successfully!`)
-      
+
     } catch (error: any) {
       console.error(`CONTENT_REFINEMENT_${platform.toUpperCase()}: Error:`, error)
       toast.dismiss()
@@ -980,13 +948,13 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
 
     try {
       toast.loading(`✅ Approving ${platform} content...`)
-      
+
       // Approve content on backend (stores on Pinata)
       await approveSocialContent(params.id, platform, socialContent[platform], userProfile.address)
-      
+
       // Update local state
       setApprovedContent(prev => ({ ...prev, [platform]: socialContent[platform] }))
-      
+
       // Update content limits
       setContentLimits(prev => ({
         ...prev,
@@ -998,14 +966,14 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           }
         }
       }))
-      
+
       // Clear current draft
       setSocialContent(prev => ({ ...prev, [platform]: null }))
       setContentIterations(prev => ({ ...prev, [platform]: 0 }))
-      
+
       toast.dismiss()
       toast.success(`✅ ${platform} content approved and saved!`)
-      
+
     } catch (error: any) {
       console.error(`CONTENT_APPROVAL_${platform.toUpperCase()}: Error:`, error)
       toast.dismiss()
@@ -1021,7 +989,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
     }
 
     setIsDiscussingStrategy(true)
-    
+
     try {
       // Add user message to local state immediately
       setStrategyDiscussionMessages(prev => ({
@@ -1033,7 +1001,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       }))
 
       toast.loading(`Discussing ${aspect} refinement...`)
-      
+
       const result = await refinePromoterStrategy(
         params.id,
         aspect,
@@ -1041,7 +1009,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
         userProfile.address,
         promoterStrategy
       )
-      
+
       // Add agent response to local state
       setStrategyDiscussionMessages(prev => ({
         ...prev,
@@ -1054,7 +1022,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       // Update strategy with refined data and iteration number (same pattern as planner)
       if (result.success && result.iterationNumber) {
         console.log(`STRATEGY_ITERATION_UPDATE: New iteration ${result.iterationNumber} created for ${aspect}`)
-        
+
         // Update selected iteration to the new one
         setSelectedStrategyIterations(prev => ({
           ...prev,
@@ -1076,10 +1044,10 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           }))
         }
       }
-      
+
       toast.dismiss()
       toast.success(`✨ ${aspect} refined successfully!`)
-      
+
     } catch (error: any) {
       console.error(`STRATEGY_DISCUSSION_${aspect.toUpperCase()}: Error:`, error)
       toast.dismiss()
@@ -1093,17 +1061,17 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const IterationSelector = ({ aspect, title }: { aspect: string, title: string }) => {
     const [iterations, setIterations] = useState<Record<number, any>>({})
     const [loading, setLoading] = useState(false)
-    
+
     // Load iterations for this aspect from blockchain
     useEffect(() => {
       if (!curationPlan) return
-      
+
       const loadIterations = async () => {
         setLoading(true)
         try {
           const aspectIterations = await getAspectIterations(params.id, aspect)
           setIterations(aspectIterations)
-          
+
           // If we have iterations from the blockchain, update the display
           if (Object.keys(aspectIterations).length > 0) {
             console.log(`[IterationSelector] Loaded ${Object.keys(aspectIterations).length} iterations for ${aspect}:`, aspectIterations)
@@ -1114,19 +1082,19 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           setLoading(false)
         }
       }
-      
+
       loadIterations()
     }, [aspect, curationPlan])
-    
+
     // Also check if iterations exist in the curation plan
     const planIterations = curationPlan?.curation?.iterations?.[aspect] || {}
     const allIterations = { ...planIterations, ...iterations }
     const iterationNumbers = Object.keys(allIterations).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b)
     const selectedIteration = selectedIterations[aspect] || 0
-    
+
     // Only show iteration selector if we have a curation plan and it's not accepted
     if (!curationPlan || curationPlan.status === 'accepted') return null
-    
+
     // Ensure we always have at least #0 (original)
     const minIterations = [0]
     if (iterationNumbers.length === 0) {
@@ -1136,10 +1104,10 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       // Merge loaded iterations with minimum required iterations
       const allNumbers = [...new Set([...minIterations, ...iterationNumbers])].sort((a, b) => a - b)
     }
-    const displayIterations = iterationNumbers.length > 0 ? 
-      [...new Set([...minIterations, ...iterationNumbers])].sort((a, b) => a - b) : 
+    const displayIterations = iterationNumbers.length > 0 ?
+      [...new Set([...minIterations, ...iterationNumbers])].sort((a, b) => a - b) :
       minIterations
-    
+
     return (
       <div className="flex items-center space-x-2 mb-2">
         <span className="text-sm text-gray-600">{title} Options:</span>
@@ -1151,11 +1119,10 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
                 // Update selected iteration
                 setSelectedIterations(prev => ({ ...prev, [aspect]: iterationNum }))
               }}
-              className={`px-2 py-1 text-xs rounded font-medium ${
-                iterationNum === selectedIteration 
-                  ? 'bg-red-600 text-white shadow-md' 
+              className={`px-2 py-1 text-xs rounded font-medium ${iterationNum === selectedIteration
+                  ? 'bg-red-600 text-white shadow-md'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
+                }`}
               disabled={loading}
               title={`${getIterationLabel(iterationNum)}: Click to preview this version`}
             >
@@ -1172,7 +1139,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       </div>
     )
   }
-  
+
   // Helper function to get iteration labels
   const getIterationLabel = (iterationNum: number): string => {
     switch (iterationNum) {
@@ -1204,15 +1171,15 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
       // Fallback to original event data
       return null
     }
-    
+
     const selectedIteration = selectedIterations[aspect] || 1 // Default to iteration #1 (AI plan)
     const iterations = curationPlan.curation.iterations[aspect]
-    
+
     if (!iterations || !iterations[selectedIteration]) {
       // Fallback to iteration #0 (original) or #1 (AI plan)
       const fallbackIteration = iterations?.[1] || iterations?.[0]
       if (!fallbackIteration) return null
-      
+
       switch (aspect) {
         case 'title':
           return fallbackIteration.title
@@ -1228,9 +1195,9 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           return fallbackIteration
       }
     }
-    
+
     const iterationData = iterations[selectedIteration]
-    
+
     switch (aspect) {
       case 'title':
         return iterationData.title
@@ -1250,12 +1217,12 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   // Helper function to render social content in natural language
   const renderSocialContent = (content: any, platform: string): string => {
     if (!content) return 'No content available'
-    
+
     // Handle natural language content from agents
     if (typeof content === 'string') {
       return content
     }
-    
+
     // Handle structured content from different platforms
     switch (platform) {
       case 'x':
@@ -1279,29 +1246,29 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           return content.tweets.map((tweet: any, idx: number) => `Tweet ${idx + 1}: ${tweet.text || tweet.content || JSON.stringify(tweet)}`).join('\n\n')
         }
         return content.content || content.text || JSON.stringify(content, null, 2)
-        
+
       case 'facebook':
         if (content.posts) {
-          return content.posts.map((post: any, idx: number) => 
+          return content.posts.map((post: any, idx: number) =>
             `Post ${idx + 1}: ${post.text || post.content || JSON.stringify(post)}`
           ).join('\n\n')
         }
         return content.content || content.text || JSON.stringify(content, null, 2)
-        
+
       case 'instagram':
         if (content.feedPosts) {
-          return content.feedPosts.map((post: any, idx: number) => 
+          return content.feedPosts.map((post: any, idx: number) =>
             `Feed Post ${idx + 1}: ${post.caption || post.content || JSON.stringify(post)}`
           ).join('\n\n')
         }
         return content.content || content.caption || JSON.stringify(content, null, 2)
-        
+
       case 'eventbrite':
         if (content.listing) {
           return `Event Listing:\nTitle: ${content.listing.title || 'N/A'}\nDescription: ${content.listing.description || 'N/A'}`
         }
         return content.content || content.description || JSON.stringify(content, null, 2)
-        
+
       default:
         return content.content || JSON.stringify(content, null, 2)
     }
@@ -1310,7 +1277,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   // Helper function to get strategy display value based on selected iteration (same pattern as planner)
   const getStrategyDisplayValue = (aspect: string): any => {
     if (!promoterStrategy) return null
-    
+
     if (strategyAccepted) {
       // If strategy is accepted, show accepted values
       switch (aspect) {
@@ -1324,16 +1291,16 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           return null
       }
     }
-    
+
     // If strategy has iterations, use selected iteration (same pattern as planner)
     if (promoterStrategy.iterations) {
       const selectedIteration = selectedStrategyIterations[aspect] || 1 // Default to iteration #1 (AI strategy)
       const iterations = promoterStrategy.iterations[aspect]
-      
+
       if (iterations && iterations[selectedIteration]) {
         // Return the natural language result from the individual agent
         const iterationData = iterations[selectedIteration]
-        
+
         // Handle natural language responses from individual agents
         if (aspect === 'generalStrategy' && iterationData.approach) {
           return iterationData // Return structured data if available
@@ -1343,12 +1310,12 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           return iterationData // Return whatever format the agent provided
         }
       }
-      
+
       // Fallback to iteration #1 or #0
       const fallbackIteration = iterations?.[1] || iterations?.[0]
       if (fallbackIteration) return fallbackIteration
     }
-    
+
     // Fallback to direct strategy data
     switch (aspect) {
       case 'generalStrategy':
@@ -1382,16 +1349,15 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             <ChevronUp className="h-4 w-4" />
           </Button>
         </div>
-        
+
         {/* Message History */}
         {messages.length > 0 && (
           <div className="mb-3 max-h-40 overflow-y-auto space-y-2">
             {messages.map((msg, idx) => (
-              <div key={idx} className={`p-2 rounded text-sm ${
-                msg.role === 'user' 
-                  ? 'bg-blue-100 dark:bg-blue-900 ml-4' 
+              <div key={idx} className={`p-2 rounded text-sm ${msg.role === 'user'
+                  ? 'bg-blue-100 dark:bg-blue-900 ml-4'
                   : 'bg-green-100 dark:bg-green-900 mr-4'
-              }`}>
+                }`}>
                 <div className="font-medium text-xs text-gray-600 dark:text-gray-400">
                   {msg.role === 'user' ? 'You' : 'Agent'}
                 </div>
@@ -1400,7 +1366,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             ))}
           </div>
         )}
-        
+
         {/* Input Area */}
         <div className="flex gap-2">
           <Textarea
@@ -1427,7 +1393,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             )}
           </Button>
         </div>
-        
+
         <p className="text-xs text-gray-500 mt-2">
           {messages.length >= 4 ? 'Maximum iterations reached' : `${Math.max(0, 2 - Math.floor(messages.length / 2))} iterations remaining`}
         </p>
@@ -1439,24 +1405,24 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
   const StrategyIterationSelector = ({ aspect, title }: { aspect: string, title: string }) => {
     const [iterations, setIterations] = useState<Record<number, any>>({})
     const [loading, setLoading] = useState(false)
-    
+
     // Load iterations for this strategy aspect from blockchain
     useEffect(() => {
       if (!promoterStrategy) return
-      
+
       const loadIterations = async () => {
         setLoading(true)
         try {
           // Load from blockchain first (same pattern as planner)
           const { getStrategyIterations } = await import('../../services/curation')
           const blockchainIterations = await getStrategyIterations(params.id, aspect)
-          
+
           // Merge with local strategy iterations
           const localIterations = promoterStrategy.iterations?.[aspect] || {}
           const allIterations = { ...localIterations, ...blockchainIterations }
-          
+
           setIterations(allIterations)
-          
+
           if (Object.keys(allIterations).length > 0) {
             console.log(`[StrategyIterationSelector] Loaded ${Object.keys(allIterations).length} iterations for ${aspect}:`, allIterations)
           }
@@ -1469,22 +1435,22 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           setLoading(false)
         }
       }
-      
+
       loadIterations()
     }, [aspect, promoterStrategy, params.id])
-    
+
     const selectedIteration = selectedStrategyIterations[aspect] || 0
     const iterationNumbers = Object.keys(iterations).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b)
-    
+
     // Only show iteration selector if we have a strategy and it's not accepted
     if (!promoterStrategy || strategyAccepted) return null
-    
+
     // Ensure we always have at least #0 (original)
     const minIterations = [0]
-    const displayIterations = iterationNumbers.length > 0 ? 
-      [...new Set([...minIterations, ...iterationNumbers])].sort((a, b) => a - b) : 
+    const displayIterations = iterationNumbers.length > 0 ?
+      [...new Set([...minIterations, ...iterationNumbers])].sort((a, b) => a - b) :
       minIterations
-    
+
     return (
       <div className="flex items-center space-x-2 mb-2">
         <span className="text-sm text-gray-600">{title} Options:</span>
@@ -1495,11 +1461,10 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
               onClick={() => {
                 setSelectedStrategyIterations(prev => ({ ...prev, [aspect]: iterationNum }))
               }}
-              className={`px-2 py-1 text-xs rounded font-medium ${
-                iterationNum === selectedIteration 
-                  ? 'bg-red-600 text-white shadow-md' 
+              className={`px-2 py-1 text-xs rounded font-medium ${iterationNum === selectedIteration
+                  ? 'bg-red-600 text-white shadow-md'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
+                }`}
               disabled={loading}
               title={`${getIterationLabel(iterationNum)}: Click to preview this version`}
             >
@@ -1537,16 +1502,15 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             <ChevronUp className="h-4 w-4" />
           </Button>
         </div>
-        
+
         {/* Message History */}
         {messages.length > 0 && (
           <div className="mb-3 max-h-40 overflow-y-auto space-y-2">
             {messages.map((msg, idx) => (
-              <div key={idx} className={`p-2 rounded text-sm ${
-                msg.role === 'user' 
-                  ? 'bg-blue-100 dark:bg-blue-900 ml-4' 
+              <div key={idx} className={`p-2 rounded text-sm ${msg.role === 'user'
+                  ? 'bg-blue-100 dark:bg-blue-900 ml-4'
                   : 'bg-green-100 dark:bg-green-900 mr-4'
-              }`}>
+                }`}>
                 <div className="font-medium text-xs text-gray-600 dark:text-gray-400">
                   {msg.role === 'user' ? 'You' : 'Agent'}
                 </div>
@@ -1555,7 +1519,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             ))}
           </div>
         )}
-        
+
         {/* Input Area */}
         <div className="flex gap-2">
           <Textarea
@@ -1582,7 +1546,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
             )}
           </Button>
         </div>
-        
+
         <p className="text-xs text-gray-500 mt-2">
           {messages.length >= 4 ? 'Maximum iterations reached' : `${Math.max(0, 2 - Math.floor(messages.length / 2))} iterations remaining`}
         </p>
@@ -1650,9 +1614,9 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
           <div className="mb-4 p-3 rounded border bg-white/60">
             <div className="text-sm font-medium mb-2">Plan generation in progress</div>
             <div className="flex flex-wrap gap-2 text-xs">
-              {['context','title','schedule','description','pricing','banner','store_title','store_description','store_pricing','store_schedule','store_banner'].map(k => (
-                <span key={k} className={`px-2 py-1 rounded ${planProgress?.steps?.[k]==='completed' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-                  {k.replace('store_','save ')}{planProgress?.steps?.[k]==='completed' ? ' ✓' : ' ...'}
+              {['context', 'title', 'schedule', 'description', 'pricing', 'banner', 'store_title', 'store_description', 'store_pricing', 'store_schedule', 'store_banner'].map(k => (
+                <span key={k} className={`px-2 py-1 rounded ${planProgress?.steps?.[k] === 'completed' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                  {k.replace('store_', 'save ')}{planProgress?.steps?.[k] === 'completed' ? ' ✓' : ' ...'}
                 </span>
               ))}
             </div>
@@ -1765,7 +1729,7 @@ export default function EventDetailPage({ params }: EventDetailPageProps) {
               contentLimits={contentLimits}
               onGenerateContent={handleGenerateContent}
               onRefineContent={handleRefineContent}
-              onPreviewContent={() => {}} // Preview handled internally in ContentTab
+              onPreviewContent={() => { }} // Preview handled internally in ContentTab
               onApproveContent={handleApproveContent}
               renderSocialContent={renderSocialContent}
               bannerUrl={getDisplayValue('banner') || event.image}
