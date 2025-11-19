@@ -33,18 +33,18 @@ const TICKET_KIOSK_ABI = parseAbi([
  */
 const convertIPFSUrl = (url: string): string => {
   if (!url) return '/placeholder.svg'
-  
+
   if (url.startsWith('http')) return url
-  
+
   if (url.startsWith('ipfs://')) {
     const ipfsHash = url.slice(7)
     return `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${ipfsHash}`
   }
-  
+
   if (url.match(/^[Qm][1-9A-HJ-NP-Za-km-z]{44,}$/)) {
     return `https://${process.env.NEXT_PUBLIC_PINATA_GATEWAY}/ipfs/${url}`
   }
-  
+
   return url
 }
 
@@ -167,15 +167,15 @@ export class TicketService {
     try {
       // Get kiosk data
       const kioskData = await this.getTicketKioskData(eventData.KioskAddress)
-      
+
       // Get metadata with caching
       const metadata = await this.getCachedMetadata(tokenURI, eventData.metadataURI, eventIndex)
-      
+
       // Determine status
       const now = Date.now()
       const startTime = Number(eventData.startDate) * 1000
       const endTime = startTime + (Number(eventData.eventDuration) * 60 * 1000)
-      
+
       let status: 'upcoming' | 'live' | 'completed' = 'upcoming'
       if (now >= startTime && now <= endTime) {
         status = 'live'
@@ -211,11 +211,11 @@ export class TicketService {
 
   private async getCachedMetadata(tokenURI: any, metadataURI: any, eventIndex: number): Promise<any> {
     let finalTokenURI = tokenURI
-    
+
     // Fallback to metadataURI if tokenURI failed
-    if (!finalTokenURI && metadataURI && 
-        !metadataURI.includes('TEST') && 
-        !metadataURI.includes('FIXED')) {
+    if (!finalTokenURI && metadataURI &&
+      !metadataURI.includes('TEST') &&
+      !metadataURI.includes('FIXED')) {
       finalTokenURI = metadataURI
     }
 
@@ -262,7 +262,7 @@ export class TicketService {
     } catch (error) {
       console.warn(`Failed to parse metadata for event ${eventIndex}:`, error)
     }
-    
+
     return {
       name: `Event #${eventIndex}`,
       description: 'Event description not available',
@@ -323,7 +323,7 @@ export class TicketService {
    */
   async getEventDetails(eventId: number): Promise<EventDetails> {
     console.log('TICKETS: Fetching event details for event ID:', eventId)
-    
+
     try {
       const eventData = await this.getPublicClient().readContract({
         address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
@@ -362,10 +362,10 @@ export class TicketService {
       const now = new Date()
       const startTime = new Date(eventDetails.startDate * 1000) // Convert from Unix timestamp
       const endTime = new Date(startTime.getTime() + eventDetails.eventDuration * 60 * 1000) // duration in minutes
-      
+
       let status: 'upcoming' | 'live' | 'ended'
       let remainingTime: number | undefined
-      
+
       if (now < startTime) {
         status = 'upcoming'
         remainingTime = startTime.getTime() - now.getTime()
@@ -375,7 +375,7 @@ export class TicketService {
       } else {
         status = 'ended'
       }
-      
+
       console.log('TICKETS: Event timing validation:', {
         eventId,
         status,
@@ -383,7 +383,7 @@ export class TicketService {
         endTime: endTime.toISOString(),
         remainingTime
       })
-      
+
       return {
         isValid: true,
         status,
@@ -403,7 +403,7 @@ export class TicketService {
   }
 
   /**
-   * Fetch all events from the EventFactory contract with caching
+   * Fetch all events from the EventFactory contract with caching and multicall optimization
    */
   async fetchAllEvents(): Promise<OnChainEventData[]> {
     if (typeof window === 'undefined') {
@@ -425,21 +425,26 @@ export class TicketService {
 
     try {
       console.log('TICKETS: Fetching all events from contract...')
-      
-      const totalEvents = await publicClient.readContract({
+
+      // Step 1: Get all event IDs and Kiosk addresses in one call
+      console.log('TICKETS: Calling getAllTicketKiosks...')
+      const [eventIds, kioskAddresses] = await publicClient.readContract({
         address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
         abi: EVENT_FACTORY_ABI,
-        functionName: 'totalEvents',
-      }) as bigint
+        functionName: 'getAllTicketKiosks',
+      }) as [bigint[], string[]]
 
-      if (totalEvents === BigInt(0)) {
+      console.log('TICKETS: getAllTicketKiosks result:', { eventIds: eventIds?.length, kioskAddresses: kioskAddresses?.length })
+
+      if (!eventIds || eventIds.length === 0) {
+        console.log('TICKETS: No events found.')
         return []
       }
 
-      const eventCount = Number(totalEvents)
-      console.log(`TICKETS: Found ${eventCount} events, fetching data with smart batching...`)
+      const eventCount = eventIds.length
+      console.log(`TICKETS: Found ${eventCount} events, fetching data with Promise.all batching...`)
 
-      // Batch size to prevent RPC overload
+      // Step 2: Fetch data in batches using Promise.all
       const BATCH_SIZE = 5
       const events: OnChainEventData[] = []
 
@@ -447,48 +452,95 @@ export class TicketService {
         const batchEnd = Math.min(i + BATCH_SIZE, eventCount)
         const batchIndices = Array.from({ length: batchEnd - i }, (_, idx) => i + idx)
 
-        // Batch 1: Event data + tokenURI
-        const batchPromises = batchIndices.flatMap(eventIndex => [
-          publicClient.readContract({
-            address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
-            abi: EVENT_FACTORY_ABI,
-            functionName: 'getEvent',
-            args: [BigInt(eventIndex)],
-          }).catch(() => null),
-          publicClient.readContract({
-            address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
-            abi: EVENT_FACTORY_ABI,
-            functionName: 'tokenURI',
-            args: [BigInt(eventIndex)],
-          }).catch(() => null)
-        ])
+        console.log(`TICKETS: Fetching batch ${Math.floor(i / BATCH_SIZE) + 1} (${batchIndices.length} events)...`)
 
-        const batchResults = await Promise.all(batchPromises)
-        
-        // Process batch results
-        for (let j = 0; j < batchIndices.length; j++) {
-          const eventIndex = batchIndices[j]
-          const eventData = batchResults[j * 2]
-          const tokenURI = batchResults[j * 2 + 1]
-          
-          if (!eventData) continue
+        const batchPromises = batchIndices.map(async (index) => {
+          const eventId = eventIds[index]
+          const kioskAddress = kioskAddresses[index]
 
           try {
-            const event = await this.processEventData(eventIndex, eventData, tokenURI, publicClient)
-            if (event) events.push(event)
+            const [eventData, tokenURI, salesInfo] = await Promise.all([
+              publicClient.readContract({
+                address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+                abi: EVENT_FACTORY_ABI,
+                functionName: 'getEvent',
+                args: [eventId]
+              }),
+              publicClient.readContract({
+                address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+                abi: EVENT_FACTORY_ABI,
+                functionName: 'tokenURI',
+                args: [eventId]
+              }),
+              publicClient.readContract({
+                address: kioskAddress as `0x${string}`,
+                abi: TICKET_KIOSK_ABI,
+                functionName: 'getSalesInfo'
+              })
+            ])
+            return { index, eventData, tokenURI, salesInfo, kioskAddress, eventId }
           } catch (error) {
-            console.error(`TICKETS: Error processing event ${eventIndex}:`, error)
+            console.error(`TICKETS: Error fetching data for event ${eventId}:`, error)
+            return null
+          }
+        })
+
+        const batchResults = await Promise.all(batchPromises)
+
+        // Process batch results
+        for (const result of batchResults) {
+          if (!result) continue
+
+          const { eventData, tokenURI, salesInfo, kioskAddress, eventId } = result
+
+          try {
+            // Construct event object
+            const metadata = await this.getCachedMetadata(tokenURI, (eventData as any).metadataURI, Number(eventId))
+
+            const now = Date.now()
+            const startTime = Number((eventData as any).startDate) * 1000
+            const endTime = startTime + (Number((eventData as any).eventDuration) * 60 * 1000)
+
+            let status: 'upcoming' | 'live' | 'completed' = 'upcoming'
+            if (now >= startTime && now <= endTime) {
+              status = 'live'
+            } else if (now > endTime) {
+              status = 'completed'
+            }
+
+            events.push({
+              id: eventId.toString(),
+              contractEventId: Number(eventId),
+              title: metadata.name || metadata.title || `Event #${eventId}`,
+              description: metadata.description || 'Event description not available',
+              creator: (eventData as any).creator,
+              creatorAddress: (eventData as any).creator,
+              category: (eventData as any).artCategory || 'standup-comedy',
+              date: new Date(startTime).toISOString(),
+              duration: Number((eventData as any).eventDuration),
+              reservePrice: Number((eventData as any).reservePrice) / 1e18,
+              ticketPrice: Number((salesInfo as any)[3]) / 1e18,
+              maxParticipants: Number((salesInfo as any)[0]),
+              participants: Number((salesInfo as any)[1]),
+              image: convertIPFSUrl(metadata.image || '/placeholder.svg'),
+              status,
+              finalized: (eventData as any).finalized,
+              ticketKioskAddress: kioskAddress,
+              eventMetadataURI: (eventData as any).metadataURI
+            })
+          } catch (error) {
+            console.error(`TICKETS: Error processing event ${eventId}:`, error)
           }
         }
 
         // Rate limit between batches
         if (batchEnd < eventCount) {
-          await new Promise(resolve => setTimeout(resolve, 100))
+          await new Promise(resolve => setTimeout(resolve, 200))
         }
       }
 
       const sortedEvents = events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      
+
       // Cache the results
       TicketService.eventCache.set(cacheKey, { data: sortedEvents, timestamp: Date.now() })
       console.log('TICKETS: Successfully fetched and cached', sortedEvents.length, 'events')
@@ -496,6 +548,40 @@ export class TicketService {
     } catch (error) {
       console.error('TICKETS: Error fetching events:', error)
       throw error
+    }
+  }
+
+  /**
+   * Fetch a single event by ID
+   */
+  async fetchEventById(eventId: number): Promise<OnChainEventData | null> {
+    try {
+      const publicClient = this.getPublicClient()
+      if (!publicClient) return null
+
+      // 1. Get Event Data and Token URI from Factory
+      const [eventData, tokenURI] = await Promise.all([
+        publicClient.readContract({
+          address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+          abi: EVENT_FACTORY_ABI,
+          functionName: 'getEvent',
+          args: [BigInt(eventId)],
+        }),
+        publicClient.readContract({
+          address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
+          abi: EVENT_FACTORY_ABI,
+          functionName: 'tokenURI',
+          args: [BigInt(eventId)],
+        })
+      ])
+
+      if (!eventData) return null
+
+      // 2. Process event data (reuses the logic from fetchAllEvents)
+      return await this.processEventData(eventId, eventData, tokenURI, publicClient)
+    } catch (error) {
+      console.error(`TICKETS: Error fetching event ${eventId}:`, error)
+      return null
     }
   }
 
@@ -523,7 +609,7 @@ export class TicketService {
 
     try {
       const publicClient = this.getPublicClient()
-      
+
       // Parallelize both calls to the kiosk contract
       const [salesInfo, eventId] = await Promise.all([
         publicClient.readContract({
@@ -573,10 +659,10 @@ export class TicketService {
     ticketKioskAddress: string
   }> {
     console.log('TICKETS: Getting ticket sales info for event ID:', eventId)
-    
+
     try {
       const eventDetails = await this.getEventDetails(eventId)
-      
+
       const salesInfo = await this.getPublicClient().readContract({
         address: eventDetails.ticketKioskAddress as `0x${string}`,
         abi: TICKET_KIOSK_ABI,
@@ -601,11 +687,11 @@ export class TicketService {
    * Check if user has a ticket for an event
    */
   async userHasTicket(eventId: number, userAddress: string): Promise<boolean> {
-    console.log('TICKETS: Checking if user has ticket for event ID:', eventId)
-    
+    // console.log('TICKETS: Checking if user has ticket for event ID:', eventId)
+
     try {
       const eventDetails = await this.getEventDetails(eventId)
-      
+
       const hasTicket = await this.getPublicClient().readContract({
         address: eventDetails.ticketKioskAddress as `0x${string}`,
         abi: TICKET_KIOSK_ABI,
@@ -613,10 +699,65 @@ export class TicketService {
         args: [userAddress as `0x${string}`, BigInt(eventId)]
       })
 
-      return hasTicket
+      return hasTicket as boolean
     } catch (error) {
       console.error('TICKETS: Error checking user ticket:', error)
       return false
+    }
+  }
+
+  /**
+   * Check ticket ownership for multiple events in one batch
+   */
+  async checkUserTicketsBatch(events: OnChainEventData[], userAddress: string): Promise<Set<number>> {
+    if (!events.length || !userAddress) return new Set()
+
+    const publicClient = this.getPublicClient()
+    if (!publicClient) return new Set()
+
+    try {
+      console.log(`TICKETS: Batch checking tickets for ${events.length} events`)
+
+      const ownedTicketIds = new Set<number>()
+      const BATCH_SIZE = 20 // Can be larger since it's just one call per event
+
+      for (let i = 0; i < events.length; i += BATCH_SIZE) {
+        const batchEnd = Math.min(i + BATCH_SIZE, events.length)
+        const batchEvents = events.slice(i, batchEnd)
+
+        const batchPromises = batchEvents.map(async (event) => {
+          try {
+            const hasTicket = await publicClient.readContract({
+              address: event.ticketKioskAddress as `0x${string}`,
+              abi: TICKET_KIOSK_ABI,
+              functionName: 'hasTicketForEvent',
+              args: [userAddress as `0x${string}`, BigInt(event.contractEventId)]
+            })
+            return { eventId: event.contractEventId, hasTicket }
+          } catch (error) {
+            console.warn(`TICKETS: Error checking ticket for event ${event.contractEventId}:`, error)
+            return null
+          }
+        })
+
+        const results = await Promise.all(batchPromises)
+
+        results.forEach(result => {
+          if (result && result.hasTicket) {
+            ownedTicketIds.add(result.eventId)
+          }
+        })
+
+        // Small delay to prevent rate limits
+        if (batchEnd < events.length) {
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+      }
+
+      return ownedTicketIds
+    } catch (error) {
+      console.error('TICKETS: Error in batch ticket check:', error)
+      return new Set()
     }
   }
 
@@ -629,17 +770,17 @@ export class TicketService {
     }
 
     console.log('TICKETS: Starting ticket purchase process')
-    
+
     try {
       const eventDetails = await this.getEventDetails(eventId)
       const salesInfo = await this.getTicketSalesInfo(eventId)
-      
+
       if (salesInfo.remainingTickets <= 0) {
         throw new Error('No tickets available - event is sold out')
       }
 
       const ticketPriceWei = parseEther(salesInfo.price)
-      
+
       const txHash = await this.getWalletClient().writeContract({
         address: eventDetails.ticketKioskAddress as `0x${string}`,
         abi: TICKET_KIOSK_ABI,
@@ -647,9 +788,9 @@ export class TicketService {
         value: ticketPriceWei,
         account: userAddress as `0x${string}`
       })
-      
+
       const receipt = await waitForTransaction(this.getPublicClient(), txHash)
-      
+
       // Parse ticket details from logs
       let ticketId = 1
       let ticketName = `rta${eventId}_ticket${ticketId}`
@@ -764,7 +905,7 @@ export class TicketService {
   async getUserTicketsForEvent(eventId: number, userAddress: string): Promise<number[]> {
     try {
       const eventDetails = await this.getEventDetails(eventId)
-      
+
       const ticketIds = await this.getPublicClient().readContract({
         address: eventDetails.ticketKioskAddress as `0x${string}`,
         abi: TICKET_KIOSK_ABI,
@@ -785,7 +926,7 @@ export class TicketService {
   async getTicketInfo(eventId: number, ticketId: number): Promise<TicketInfo> {
     try {
       const eventDetails = await this.getEventDetails(eventId)
-      
+
       const ticketData = await this.getPublicClient().readContract({
         address: eventDetails.ticketKioskAddress as `0x${string}`,
         abi: TICKET_KIOSK_ABI,
@@ -820,7 +961,7 @@ export class TicketService {
 
     try {
       console.log('TICKETS: Fetching tickets for user:', userAddress)
-      
+
       const kioskData = await this.getPublicClient().readContract({
         address: CONTRACT_ADDRESSES.EVENT_FACTORY as `0x${string}`,
         abi: EVENT_FACTORY_ABI,
@@ -834,7 +975,7 @@ export class TicketService {
         try {
           const kioskAddress = kioskAddresses[i]
           const eventId = Number(eventIds[i])
-          
+
           const userTicketIds = await this.getPublicClient().readContract({
             address: kioskAddress as `0x${string}`,
             abi: TicketKioskABI,
