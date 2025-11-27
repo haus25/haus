@@ -5,6 +5,7 @@ export interface StreamSession {
   whipUrl: string;
   whepUrl: string;
   sessionId: string;
+  enhanced?: boolean;
 }
 
 export interface StreamStatus {
@@ -31,16 +32,23 @@ class StreamingService {
 
   /**
    * Generate stream URLs directly (no backend needed)
+   * @param eventId - The event ID
+   * @param enhanced - If true, use the enhanced (producer-processed) stream for playback
    */
-  generateStreamUrls(eventId: string): StreamSession {
+  generateStreamUrls(eventId: string, enhanced: boolean = false): StreamSession {
     const sessionId = `event_${eventId}_${Date.now()}`;
+    // Enhanced streams have _enhanced suffix (processed by producer server)
+    const streamSuffix = enhanced ? '_enhanced' : '';
     
     return {
+      // Publishing always goes to the original stream (creator publishes raw)
       streamUrl: `rtmp://room.haus25.live:1935/live/${eventId}`,
-      playUrl: `https://room.haus25.live:8080/live/${eventId}.flv`,
       whipUrl: `https://room.haus25.live/rtc/v1/whip/?app=live&stream=${eventId}`,
-      whepUrl: `https://room.haus25.live/rtc/v1/whep/?app=live&stream=${eventId}`,
-      sessionId
+      // Playback can use enhanced stream if available
+      playUrl: `https://room.haus25.live:8080/live/${eventId}${streamSuffix}.flv`,
+      whepUrl: `https://room.haus25.live/rtc/v1/whep/?app=live&stream=${eventId}${streamSuffix}`,
+      sessionId,
+      enhanced
     };
   }
 
